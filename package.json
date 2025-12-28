@@ -1,0 +1,15 @@
+{
+  "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.4.2",
+    "axios": "^1.13.2",
+    "clsx": "^2.1.1",
+    "jszip": "^3.10.1",
+    "lucide-react": "^0.562.0",
+    "react-dropzone": "^14.3.8",
+    "react-markdown": "^10.1.0",
+    "tailwind-merge": "^3.4.0",
+    "three": "^0.182.0"
+  }
+}
