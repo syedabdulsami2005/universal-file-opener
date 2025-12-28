@@ -5,7 +5,7 @@ import { FileUp } from 'lucide-react';
 import UniversalViewer from './UniversalViewer';
 
 // API URL
-const API_URL = "http://localhost:8000";
+const API_URL = "https://universal-file-opener.onrender.com";
 
 export default function App() {
   const [file, setFile] = useState(null);
