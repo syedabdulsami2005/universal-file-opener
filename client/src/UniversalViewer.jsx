@@ -1,34 +1,38 @@
-import React, { useState, useEffect } from "react";
-import Editor from "@monaco-editor/react";
+import React, { useState, useEffect, Suspense } from "react";
 import JSZip from "jszip";
-// FIX: useLoader is now correctly imported from fiber, not drei
-import { Canvas, useLoader } from "@react-three/fiber"; 
-import { Stage, OrbitControls } from "@react-three/drei";
-import { STLLoader } from "three/examples/jsm/loaders/STLLoader";
+import { Loader2, Download, FileQuestion } from "lucide-react";
 
-// 1. 3D Viewer Component
-const ModelViewer = ({ url }) => {
-  try {
-    const geom = useLoader(STLLoader, url);
-    return (
-      <Canvas camera={{ position: [0, 0, 100], fov: 50 }} className="h-full w-full">
-        <Stage environment="city" intensity={0.6}>
-          <mesh geometry={geom}>
-            <meshStandardMaterial color="orange" />
-          </mesh>
-        </Stage>
-        <OrbitControls autoRotate />
-      </Canvas>
-    );
-  } catch (e) { return <div className="text-red-500">Error loading 3D model</div>; }
-};
+// Lazy Load Components
+const Editor = React.lazy(() => import("@monaco-editor/react"));
+const ModelViewer = React.lazy(() => import("./ModelViewer"));
+const PdfRenderer = React.lazy(() => import("./PdfRenderer"));
 
-// 2. Main Viewer Logic
+const LoadingSpinner = ({ text }) => (
+  <div className="flex items-center justify-center h-full text-blue-500 gap-2">
+    <Loader2 className="w-8 h-8 animate-spin" />
+    <span>{text || "Loading..."}</span>
+  </div>
+);
+
 const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
   const [zipFiles, setZipFiles] = useState([]);
 
+  // 1. MEGA MAPPING of Extensions to Editor Languages
   const getLanguage = (ext) => {
-    const map = { js: "javascript", py: "python", java: "java", cpp: "cpp", html: "html", css: "css", json: "json", sql: "sql", rs: "rust", go: "go", md: "markdown" };
+    const map = {
+      js:'javascript', mjs:'javascript', jsx:'javascript', ts:'typescript', tsx:'typescript',
+      py:'python', pyw:'python', ipynb:'python',
+      java:'java', kt:'kotlin',
+      c:'c', cpp:'cpp', cc:'cpp', cxx:'cpp', h:'cpp', hpp:'cpp', cs:'csharp',
+      go:'go', rs:'rust', swift:'swift', dart:'dart',
+      php:'php', rb:'ruby',
+      html:'html', htm:'html', css:'css', scss:'scss', less:'less',
+      json:'json', yaml:'yaml', yml:'yaml', xml:'xml', sql:'sql',
+      sh:'shell', bash:'shell', zsh:'shell', bat:'bat', ps1:'powershell',
+      md:'markdown', dockerfile:'dockerfile',
+      r:'r', clj:'clojure', ex:'elixir',
+      // Add more as needed
+    };
     return map[ext] || "plaintext";
   };
 
@@ -38,32 +42,47 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     }
   }, [file, fileType]);
 
-  // A. Backend Converted Content (Excel, Jupyter)
+  // --- VIEWING LOGIC ---
+
+  // A. Backend Content (Office, Docx, PPTX, Excel, HTML)
   if (backendData?.type === 'html_table' || backendData?.type === 'html_doc') {
     return <div dangerouslySetInnerHTML={{ __html: backendData.content }} className="prose max-w-none p-4 overflow-auto h-full" />;
   }
 
   // B. Images
-  if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(fileType)) {
+  if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'ico'].includes(fileType)) {
     return <img src={URL.createObjectURL(file)} className="max-w-full max-h-full object-contain mx-auto" />;
   }
 
-  // C. Video/Audio
-  if (['mp4', 'webm', 'mp3', 'wav'].includes(fileType)) {
+  // C. Audio / Video
+  if (['mp4', 'webm', 'mov', 'avi', 'mkv'].includes(fileType)) {
     return <video controls src={URL.createObjectURL(file)} className="w-full max-h-full" />;
+  }
+  if (['mp3', 'wav', 'ogg', 'flac'].includes(fileType)) {
+    return <div className="flex items-center justify-center h-full"><audio controls src={URL.createObjectURL(file)} /></div>;
   }
 
   // D. PDF
   if (fileType === 'pdf') {
-     return <iframe src={URL.createObjectURL(file)} className="w-full h-full" />;
+     return (
+       <Suspense fallback={<LoadingSpinner text="Loading PDF..." />}>
+         <PdfRenderer url={URL.createObjectURL(file)} />
+       </Suspense>
+     );
   }
 
-  // E. 3D Models (STL)
-  if (fileType === 'stl') {
-    return <div className="h-[500px]"><ModelViewer url={URL.createObjectURL(file)} /></div>;
+  // E. 3D Models
+  if (['stl', 'obj'].includes(fileType)) {
+    return (
+      <div className="h-[500px]">
+        <Suspense fallback={<LoadingSpinner text="Loading 3D Engine..." />}>
+          <ModelViewer url={URL.createObjectURL(file)} />
+        </Suspense>
+      </div>
+    );
   }
 
-  // F. Archives
+  // F. Archives (Zip/Jar)
   if (['zip', 'jar'].includes(fileType)) {
     return (
       <div className="p-4">
@@ -75,28 +94,38 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     );
   }
 
-  // G. Code & Text
-  const codeExts = ['c','cpp','h','java','py','cs','rs','go','html','css','js','ts','php','json','yaml','sql','sh','md','txt','env','dockerfile'];
-  
-  if (codeExts.includes(fileType)) {
+  // G. Code & Text (Only if content exists)
+  if (fileContent) {
     return (
-      <Editor 
-        height="100%" 
-        language={getLanguage(fileType)} 
-        value={fileContent || "Loading..."} 
-        theme="vs-dark" 
-        options={{ readOnly: true, minimap: { enabled: false } }} 
-      />
+      <Suspense fallback={<LoadingSpinner text="Loading Editor..." />}>
+        <Editor 
+          height="100%" 
+          language={getLanguage(fileType)} 
+          value={fileContent} 
+          theme="vs-dark" 
+          options={{ readOnly: true, minimap: { enabled: false } }} 
+        />
+      </Suspense>
     );
   }
 
-  // H. Fallback: Hex Dump
+  // H. FINAL FALLBACK: NO BINARY NUMBERS!
+  // If we don't know the file, or backend failed, show this Download Card.
   return (
-    <div className="p-4 font-mono text-xs bg-gray-900 text-green-400 h-full overflow-auto">
-      <div className="mb-2 border-b border-gray-700 pb-2 font-bold text-yellow-500">BINARY / HEX MODE (First 500 bytes)</div>
-      <div className="break-all">
-        {fileContent && typeof fileContent === 'string' ? fileContent.slice(0, 2000) : "Binary content loaded. Visualization limited."}
-      </div>
+    <div className="flex flex-col items-center justify-center h-full bg-gray-50 text-gray-600 p-6 text-center">
+      <FileQuestion className="w-16 h-16 text-gray-400 mb-4" />
+      <h2 className="text-xl font-semibold mb-2">Preview Unavailable</h2>
+      <p className="mb-6 max-w-sm">
+        We cannot display this file type (.{fileType}) directly in the browser.
+      </p>
+      <a 
+        href={URL.createObjectURL(file)} 
+        download={file.name}
+        className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition"
+      >
+        <Download className="w-5 h-5" />
+        Download File
+      </a>
     </div>
   );
 };

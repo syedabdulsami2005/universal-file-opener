@@ -7,3 +7,7 @@ nbformat
 nbconvert
 pypdf
 python-magic
+mammoth
+python-pptx
+ebooklib
+beautifulsoup4
