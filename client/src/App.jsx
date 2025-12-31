@@ -1,11 +1,10 @@
 import React, { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import axios from 'axios';
-import { FileUp } from 'lucide-react';
+import { FileUp, Loader2 } from 'lucide-react'; // We use Loader2 for the spinner
 import UniversalViewer from './UniversalViewer';
-import bufferingLogo from './assets/buffering-logo.png';
 
-// Change to your live URL
+// API URL (Your live backend)
 const API_URL = "https://universal-file-opener.onrender.com";
 
 export default function App() {
@@ -19,24 +18,24 @@ export default function App() {
     const uploadedFile = acceptedFiles[0];
     setFile(uploadedFile);
     setBackendData(null);
-    setContent(null); // Reset content
-    setLoading(true);
+    setContent(null); 
+    setLoading(true); // Start Loading
 
     const ext = uploadedFile.name.split('.').pop().toLowerCase();
     setFileType(ext);
 
     // List of files we can read safely as text in the browser
     const codeExts = [
-      'c','cpp','cc','cxx','h','hpp','hh','hxx', // C++
-      'java','jar','class', // Java (Source only)
-      'py','pyw', // Python
-      'cs','csproj','sln', // C#
-      'rs','go','ts','tsx','php','rb','jsx','vue','svelte','erb', // Web/Modern
-      'kt','xml','gradle','swift','m','dart', // Mobile
-      'json','yaml','yml','toml','ini','cfg','conf','env','sql','db','sqlite','psql','md','tex','rst', // Config/Data
-      'sh','bash','zsh','bat','cmd','ps1','vbs','dockerfile','makefile','cmake','vagrantfile', // Scripts
-      'hs','scala','erl','ex','exs','clj','v','r','jl', // Niche
-      'txt','rtf','log','svg','html','htm','css','js','mjs' // Standard
+      'c','cpp','cc','cxx','h','hpp','hh','hxx',
+      'java','jar','class',
+      'py','pyw',
+      'cs','csproj','sln',
+      'rs','go','ts','tsx','php','rb','jsx','vue','svelte','erb',
+      'kt','xml','gradle','swift','m','dart',
+      'json','yaml','yml','toml','ini','cfg','conf','env','sql','db','sqlite','psql','md','tex','rst',
+      'sh','bash','zsh','bat','cmd','ps1','vbs','dockerfile','makefile','cmake','vagrantfile',
+      'hs','scala','erl','ex','exs','clj','v','r','jl',
+      'txt','rtf','log','svg','html','htm','css','js','mjs'
     ];
 
     // 1. Try to read text locally
@@ -46,15 +45,13 @@ export default function App() {
         setContent(text);
         setLoading(false);
       } catch (e) {
-        setContent(null); // Failed to read text
+        setContent(null);
       }
     } else {
-      // 2. If it's NOT a code file, we don't try to read it as text. 
-      // This prevents the binary/hex dump from ever being generated.
       setContent(null);
     }
 
-    // 3. Send to Backend (for complex docs) or just finish loading
+    // 2. Send to Backend (for complex docs) or just finish loading
     const needsBackend = ['xlsx','xls','csv','parquet','docx','pptx','epub','ipynb'].includes(ext);
     
     if (needsBackend) {
@@ -69,7 +66,6 @@ export default function App() {
         setLoading(false);
       }
     } else if (!codeExts.includes(ext)) {
-      // If it's not code and not backend-capable (e.g. PDF, Images, Video), stop loading immediately
       setLoading(false);
     }
 
@@ -95,9 +91,11 @@ export default function App() {
               <p>No file loaded</p>
             </div>
           ) : loading ? (
-            // Custom Loading Animation
-            <div className="flex flex-col items-center justify-center h-full">
-               <img src={bufferingLogo} alt="Loading..." className="w-40 h-40 animate-spin drop-shadow-xl" />
+            // --- NEW CODE-BASED LOADING SCREEN ---
+            <div className="flex flex-col items-center justify-center h-full text-blue-600">
+               <Loader2 className="w-16 h-16 animate-spin mb-4" />
+               <h2 className="text-xl font-semibold">Converting File...</h2>
+               <p className="text-gray-400 text-sm mt-2">Please wait a moment</p>
             </div>
           ) : (
              <UniversalViewer file={file} fileType={fileType} fileContent={content} backendData={backendData} />
