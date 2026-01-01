@@ -502,4 +502,23 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
       <div className="flex flex-col h-full bg-gray-100">
         <div className="bg-white p-3 border-b flex items-center gap-3 shadow-sm z-20 shrink-0">
           <button onClick={closeInternalFile} className="flex items-center gap-1 text-sm font-semibold text-blue-600 hover:text-blue-800 transition"><ArrowLeft size={18} /> Back</button>
-          <span className="text-gray-700 text-
+          <span className="text-gray-700 text-sm font-medium truncate flex-1">/ {selectedZipFile}</span>
+        </div>
+        <div className="flex-1 overflow-hidden relative w-full flex flex-col">
+          {internalLoading ? <LoadingSpinner text="Opening..." /> : renderContent(internalFileType, internalFileUrl, internalFileContent, internalBackendData, internalTableData, selectedZipFile)}
+        </div>
+      </div>
+    );
+  }
+
+  // --- ZIP FILE NAVIGATOR (Folder View) ---
+  if ((fileType === 'zip' || fileType === 'jar') && zipContent) {
+    return <ZipNavigator zipContent={zipContent} onFileClick={handleZipFileClick} />;
+  }
+
+  if (fileType === '7z') return <div className="flex flex-col items-center justify-center h-full text-center p-6 bg-gray-50"><FolderOpen className="w-16 h-16 text-yellow-600 mb-4" /><h2 className="text-xl font-bold mb-2">7-Zip Archive (.7z)</h2><p className="max-w-md text-gray-600 mb-6">Browsing .7z files directly is too heavy for browsers.</p><a href={file ? URL.createObjectURL(file) : "#"} download={file?.name} className="bg-yellow-600 text-white px-6 py-3 rounded-lg hover:bg-yellow-700 transition flex items-center gap-2"><Download size={20} /> Download .7z File</a></div>;
+
+  return renderContent(fileType, file ? URL.createObjectURL(file) : null, fileContent, backendData, null, file?.name);
+};
+
+export default UniversalViewer;
