@@ -24,7 +24,6 @@ const LoadingSpinner = ({ text }) => (
 const ZipNavigator = ({ zipContent, onFileClick }) => {
   const [currentPath, setCurrentPath] = useState(""); // Root is empty string
 
-  // Calculate folder contents based on currentPath
   const { folders, files } = useMemo(() => {
     if (!zipContent) return { folders: [], files: [] };
 
@@ -32,19 +31,21 @@ const ZipNavigator = ({ zipContent, onFileClick }) => {
     const fileList = [];
 
     Object.keys(zipContent.files).forEach((path) => {
-      if (!path.startsWith(currentPath)) return; // Not in this folder
+      // Filter items that start with current path
+      if (!path.startsWith(currentPath)) return; 
 
+      // Remove the current path prefix
       const relativePath = path.slice(currentPath.length);
-      if (!relativePath) return; // Is the current folder itself
+      if (!relativePath) return; // It's the folder itself
 
       const parts = relativePath.split('/');
       
+      // If it has slashes, the first part is a folder
       if (parts.length > 1 || (parts.length === 1 && zipContent.files[path].dir)) {
-        // It's a subfolder (e.g., "Module-1/")
         const folderName = parts[0];
         if (folderName) folderSet.add(folderName);
       } else {
-        // It's a file in this folder
+        // It's a file
         fileList.push({ name: parts[0], fullPath: path });
       }
     });
@@ -61,16 +62,16 @@ const ZipNavigator = ({ zipContent, onFileClick }) => {
 
   const goUp = () => {
     const parts = currentPath.split('/').filter(p => p);
-    parts.pop();
+    parts.pop(); // Remove last folder
     setCurrentPath(parts.length > 0 ? parts.join('/') + '/' : "");
   };
 
   return (
     <div className="flex flex-col h-full bg-white">
-      {/* Navigation Bar */}
+      {/* Breadcrumb Navigation */}
       <div className="p-3 border-b bg-gray-50 flex items-center gap-2 shadow-sm shrink-0 overflow-x-auto whitespace-nowrap">
         {currentPath ? (
-          <button onClick={goUp} className="flex items-center gap-1 text-sm font-bold text-blue-600 hover:bg-blue-100 px-2 py-1 rounded">
+          <button onClick={goUp} className="flex items-center gap-1 text-sm font-bold text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-full transition bg-white border border-blue-100">
             <ArrowLeft size={16} /> Back
           </button>
         ) : (
@@ -78,23 +79,23 @@ const ZipNavigator = ({ zipContent, onFileClick }) => {
             <Home size={16} /> Root
           </div>
         )}
-        <span className="text-gray-400">|</span>
-        <span className="text-sm font-mono text-gray-700">{currentPath || "/"}</span>
+        <span className="text-gray-300">|</span>
+        <span className="text-sm font-mono text-gray-700 truncate max-w-[200px]">{currentPath || "/"}</span>
       </div>
 
-      {/* File List */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden p-2">
-        <div className="grid gap-1">
+      {/* Scrollable File List */}
+      <div className="flex-1 overflow-y-auto p-2">
+        <div className="flex flex-col gap-1">
           {/* Folders */}
           {folders.map(folder => (
             <div 
               key={folder} 
               onClick={() => enterFolder(folder)}
-              className="flex items-center gap-3 p-3 rounded-lg hover:bg-yellow-50 active:bg-yellow-100 cursor-pointer border border-transparent hover:border-yellow-200 transition"
+              className="flex items-center gap-3 p-3 rounded-lg hover:bg-yellow-50 active:bg-yellow-100 cursor-pointer border border-transparent hover:border-yellow-200 transition group"
             >
-              <FolderOpen size={24} className="text-yellow-500 shrink-0" />
+              <FolderOpen size={24} className="text-yellow-500 shrink-0 group-hover:scale-110 transition-transform" />
               <span className="font-semibold text-gray-700 truncate flex-1">{folder}</span>
-              <ChevronRight size={16} className="text-gray-400" />
+              <ChevronRight size={16} className="text-gray-300 group-hover:text-gray-500" />
             </div>
           ))}
 
@@ -109,11 +110,10 @@ const ZipNavigator = ({ zipContent, onFileClick }) => {
               <div 
                 key={file.name} 
                 onClick={() => onFileClick(file.fullPath)}
-                className="flex items-center gap-3 p-3 rounded-lg hover:bg-blue-50 active:bg-blue-100 cursor-pointer border border-transparent hover:border-blue-200 transition"
+                className="flex items-center gap-3 p-3 rounded-lg hover:bg-blue-50 active:bg-blue-100 cursor-pointer border border-transparent hover:border-blue-200 transition group"
               >
-                <Icon size={24} className="text-blue-500 shrink-0" />
-                {/* min-w-0 allows truncate to work inside flex */}
-                <div className="flex-1 min-w-0">
+                <Icon size={24} className="text-blue-500 shrink-0 group-hover:scale-110 transition-transform" />
+                <div className="flex-1 min-w-0 overflow-hidden">
                   <p className="text-sm font-medium text-gray-700 truncate">{file.name}</p>
                 </div>
               </div>
@@ -121,7 +121,10 @@ const ZipNavigator = ({ zipContent, onFileClick }) => {
           })}
 
           {folders.length === 0 && files.length === 0 && (
-             <div className="text-center p-8 text-gray-400 italic">Empty Folder</div>
+             <div className="flex flex-col items-center justify-center p-12 text-gray-400">
+                <FolderOpen size={48} className="mb-2 opacity-20" />
+                <span className="italic">Empty Folder</span>
+             </div>
           )}
         </div>
       </div>
@@ -151,7 +154,6 @@ const convertIpynbToHtml = async (blob) => {
            }
         } else if (cell.cell_type === 'markdown') {
            const source = Array.isArray(cell.source) ? cell.source.join('') : cell.source;
-           // Simple Markdown Formatter
            let formatted = source
               .replace(/### (.*)/g, '<h3 style="font-weight:600; font-size:1.1em; margin:16px 0 8px;">$1</h3>')
               .replace(/## (.*)/g, '<h2 style="font-weight:600; font-size:1.25em; margin:20px 0 10px; border-bottom:1px solid #eee;">$1</h2>')
@@ -223,7 +225,7 @@ const PaginatedTable = ({ data, fileName }) => {
   );
 };
 
-// --- 4. SMART GESTURE ZOOM WRAPPER (Zoom-to-Point) ---
+// --- 4. SMART GESTURE ZOOM WRAPPER ---
 const ZoomWrapper = ({ children, className = "" }) => {
   const containerRef = useRef(null);
   const contentRef = useRef(null);
@@ -233,20 +235,18 @@ const ZoomWrapper = ({ children, className = "" }) => {
     const container = containerRef.current;
     if (!container) return;
 
-    const updateTransform = (originX, originY) => {
+    const updateTransform = () => {
       const content = contentRef.current;
       if (!content) return;
-      
       const { scale } = state.current;
       content.style.transform = `scale(${scale})`;
-      // Expand width to allow scrolling to edges
+      // FIX: Expand width when zoomed so horizontal scroll works
       content.style.width = scale > 1 ? `${scale * 100}%` : '100%';
       content.style.transformOrigin = "top left";
     };
 
     const handleTouchStart = (e) => {
       if (e.touches.length === 2) {
-        // e.preventDefault(); // Allow browser defaults slightly to reduce conflict
         const t1 = e.touches[0];
         const t2 = e.touches[1];
         state.current.startDist = Math.hypot(t1.pageX - t2.pageX, t1.pageY - t2.pageY);
@@ -263,7 +263,6 @@ const ZoomWrapper = ({ children, className = "" }) => {
            const scaleChange = newDist / state.current.startDist;
            let newScale = state.current.scale * scaleChange;
            newScale = Math.max(1.0, Math.min(newScale, 5.0));
-           
            state.current.scale = newScale;
            state.current.startDist = newDist; 
            updateTransform();
@@ -277,21 +276,20 @@ const ZoomWrapper = ({ children, className = "" }) => {
         const delta = -e.deltaY * 0.001; 
         let newScale = state.current.scale + delta;
         newScale = Math.max(1.0, Math.min(newScale, 5.0));
-
-        // Logic to keep mouse focused
+        
         const rect = container.getBoundingClientRect();
-        const offsetX = e.clientX - rect.left + container.scrollLeft;
-        const offsetY = e.clientY - rect.top + container.scrollTop;
-
-        // Ratio of change
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        const scrollLeft = container.scrollLeft;
+        const scrollTop = container.scrollTop;
         const ratio = newScale / state.current.scale;
 
         state.current.scale = newScale;
         updateTransform();
 
-        // Adjust scroll to keep focus
-        container.scrollLeft = offsetX * ratio - (e.clientX - rect.left);
-        container.scrollTop = offsetY * ratio - (e.clientY - rect.top);
+        // Adjust scroll position to zoom towards the mouse
+        container.scrollLeft = (scrollLeft + mouseX) * ratio - mouseX;
+        container.scrollTop = (scrollTop + mouseY) * ratio - mouseY;
       }
     };
 
@@ -310,7 +308,7 @@ const ZoomWrapper = ({ children, className = "" }) => {
     <div ref={containerRef} className={`relative w-full h-full overflow-auto bg-gray-50 touch-pan-x touch-pan-y ${className}`}>
       <div 
         ref={contentRef} 
-        className="origin-top-left transition-transform duration-75 ease-out will-change-transform min-h-full"
+        className="origin-top-left transition-transform duration-75 ease-out will-change-transform min-h-full" 
         style={{ width: '100%', backfaceVisibility: 'hidden' }}
       >
         {children}
@@ -422,11 +420,11 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
 
   const renderContent = (type, url, content, data, tableData, fileName) => {
     
-    // A. TABLE DATA
+    // A. TABLE DATA (Zoom Enabled)
     if (tableData) {
        return <ZoomWrapper><PaginatedTable data={tableData} fileName={fileName} /></ZoomWrapper>;
     }
-    // B. HTML DOCUMENTS (Word, Notebooks)
+    // B. HTML DOCUMENTS (Zoom Enabled)
     if (data?.type === 'html_table' || data?.type === 'html_doc') {
       return (
         <ZoomWrapper>
@@ -434,7 +432,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
         </ZoomWrapper>
       );
     }
-    // C. IMAGES
+    // C. IMAGES (Zoom Enabled)
     if (EXT_MAP.image.includes(type) || data?.type === 'image_pass') {
       return (
         <ZoomWrapper>
@@ -443,12 +441,12 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
       );
     }
 
-    // D. PDF (FIXED: Uses ZoomWrapper for Pinch, but forces white background & fit)
+    // D. PDF (Zoom Wrapper Enabled + White BG to fix black box)
     if (type === 'pdf' || data?.type === 'pdf_pass') {
        return (
-         <ZoomWrapper className="bg-gray-200">
+         <ZoomWrapper className="bg-white">
              <div className="flex flex-col items-center min-h-screen pt-4 pb-12">
-                <div className="bg-white shadow-xl w-full md:w-[800px] lg:w-[900px] max-w-full">
+                <div className="w-full md:w-[800px] lg:w-[900px] max-w-full shadow-lg">
                     <Suspense fallback={<LoadingSpinner />}><PdfRenderer url={url} /></Suspense>
                 </div>
              </div>
@@ -456,7 +454,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
        );
     }
 
-    // E. CODE (FIXED: 100% dimensions, no zoom wrapper to break layout)
+    // E. CODE (Native Zoom - No ZoomWrapper to prevent layout break)
     if (content || data?.type === 'text_content') {
       const displayContent = data?.type === 'text_content' ? data.content : content;
       const getLanguage = (e) => ({ js:'javascript', py:'python', java:'java', html:'html', css:'css', json:'json', sql:'sql', md:'markdown' }[e] || "plaintext");
@@ -464,29 +462,30 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
         <div className="flex-1 w-full h-full bg-[#1e1e1e] overflow-hidden flex flex-col"> 
           <Suspense fallback={<LoadingSpinner text="Loading Editor..." />}>
              <Editor 
-                height="100%" 
-                width="100%"
-                language={getLanguage(type)} 
-                value={displayContent} 
-                theme="vs-dark" 
-                options={{ 
-                   readOnly: true, 
-                   minimap: { enabled: false }, 
-                   automaticLayout: true,
-                   scrollBeyondLastLine: false,
-                   wordWrap: 'on' 
-                }} 
+               height="100%" 
+               width="100%"
+               language={getLanguage(type)} 
+               value={displayContent} 
+               theme="vs-dark" 
+               options={{ 
+                 readOnly: true, 
+                 minimap: { enabled: false }, 
+                 automaticLayout: true,
+                 scrollBeyondLastLine: false,
+                 wordWrap: 'on' 
+               }} 
              />
           </Suspense>
         </div>
       );
     }
     
-    // F. MODELS/MEDIA/FALLBACK
+    // F. MODELS/MEDIA
     if (EXT_MAP.model.includes(type)) return <div className="h-[500px] w-full"><Suspense fallback={<LoadingSpinner />}><ModelViewer url={url} /></Suspense></div>;
     if (EXT_MAP.video.includes(type)) return <div className="flex items-center justify-center h-full bg-black"><video controls src={url} className="max-w-full max-h-full" /></div>;
     if (EXT_MAP.audio.includes(type)) return <div className="flex items-center justify-center h-60"><audio controls src={url} /></div>;
 
+    // G. FALLBACK
     return (
       <div className="flex flex-col items-center justify-center h-full bg-gray-50 text-gray-600 p-6 text-center">
         <FileQuestion className="w-12 h-12 text-gray-400 mb-4" />
@@ -516,7 +515,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     return <ZipNavigator zipContent={zipContent} onFileClick={handleZipFileClick} />;
   }
 
-  if (fileType === '7z') return <div className="flex flex-col items-center justify-center h-full text-center p-6 bg-gray-50"><FolderOpen className="w-16 h-16 text-yellow-600 mb-4" /><h2 className="text-xl font-bold mb-2">7-Zip Archive (.7z)</h2><p className="max-w-md text-gray-600 mb-6">Browsing .7z files directly is too heavy for browsers.</p><a href={file ? URL.createObjectURL(file) : "#"} download={file?.name} className="bg-yellow-600 text-white px-6 py-3 rounded-lg hover:bg-yellow-700 transition flex items-center gap-2"><Download size={20} /> Download .7z File</a></div>;
+  if (fileType === '7z') return <div className="flex flex-col items-center justify-center h-full text-center p-6 bg-gray-50"><FolderOpen className="w-16 h-16 text-yellow-600 mb-4" /><h2 className="text-xl font-bold mb-2">7-Zip Archive (.7z)</h2><p className="max-w-md text-gray-600 mb-6">Browsing .7z files directly is too heavy for browsers. Please download locally.</p><a href={file ? URL.createObjectURL(file) : "#"} download={file?.name} className="bg-yellow-600 text-white px-6 py-3 rounded-lg hover:bg-yellow-700 transition flex items-center gap-2"><Download size={20} /> Download .7z File</a></div>;
 
   return renderContent(fileType, file ? URL.createObjectURL(file) : null, fileContent, backendData, null, file?.name);
 };
