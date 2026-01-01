@@ -1,7 +1,9 @@
 import React, { useState, useEffect, Suspense, useRef } from "react";
 import JSZip from "jszip";
 import axios from "axios";
-import { Loader2, Download, FileText, FolderOpen, ArrowLeft, FileQuestion } from "lucide-react";
+import * as XLSX from "xlsx"; // Local Excel
+import mammoth from "mammoth"; // Local Word
+import { Loader2, Download, FileText, FolderOpen, ArrowLeft, FileQuestion, ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
 
 // Lazy Load Components
 const Editor = React.lazy(() => import("@monaco-editor/react"));
@@ -14,87 +16,125 @@ const API_URL = "https://universal-file-opener.onrender.com";
 const LoadingSpinner = ({ text }) => (
   <div className="flex flex-col items-center justify-center h-full text-blue-500 gap-3 p-6 text-center">
     <Loader2 className="w-10 h-10 animate-spin" />
-    <span className="font-semibold text-lg">{text || "Loading..."}</span>
+    <span className="font-semibold text-lg">{text || "Processing..."}</span>
   </div>
 );
 
-// --- GESTURE ZOOM WRAPPER (Fixed Sensitivity & Boundaries) ---
+// --- LOCAL IPYNB PARSER (Zero Server Latency) ---
+const convertIpynbToHtml = async (blob) => {
+  const text = await blob.text();
+  const json = JSON.parse(text);
+  let html = '<div style="padding: 20px; font-family: monospace; max-width: 100%;">';
+  
+  if (json.cells) {
+    json.cells.forEach((cell, index) => {
+      // 1. Inputs (Code)
+      if (cell.cell_type === 'code') {
+         const source = Array.isArray(cell.source) ? cell.source.join('') : cell.source;
+         if (source.trim()) {
+           html += `<div style="background: #f5f5f5; padding: 10px; border-radius: 4px; margin-bottom: 5px; border-left: 4px solid #3b82f6; overflow-x: auto;">
+             <div style="color: #3b82f6; font-weight: bold; font-size: 0.8em; margin-bottom: 5px;">In [${cell.execution_count || ' '}]:</div>
+             <pre style="margin: 0; font-size: 13px;">${source}</pre>
+           </div>`;
+         }
+      } 
+      // 2. Markdown / Text
+      else if (cell.cell_type === 'markdown') {
+         const source = Array.isArray(cell.source) ? cell.source.join('') : cell.source;
+         // Simple cleanup for markdown bold/headers to make it readable
+         let formatted = source
+            .replace(/### (.*)/g, '<h3>$1</h3>')
+            .replace(/## (.*)/g, '<h2>$1</h2>')
+            .replace(/# (.*)/g, '<h1>$1</h1>')
+            .replace(/\*\*(.*)\*\*/g, '<b>$1</b>')
+            .replace(/\n/g, '<br>');
+         html += `<div style="padding: 10px; margin-bottom: 10px; font-family: sans-serif;">${formatted}</div>`;
+      }
+
+      // 3. Outputs (Images & Text)
+      if (cell.outputs) {
+         cell.outputs.forEach(out => {
+           // Text Output
+           if (out.text) {
+             const txt = Array.isArray(out.text) ? out.text.join('') : out.text;
+             html += `<div style="margin-left: 10px; margin-bottom: 10px; font-size: 0.9em; color: #444;"><pre>${txt}</pre></div>`;
+           }
+           // Data Output (Images/Text)
+           if (out.data) {
+             if (out.data['text/plain']) {
+                const txt = Array.isArray(out.data['text/plain']) ? out.data['text/plain'].join('') : out.data['text/plain'];
+                html += `<div style="margin-left: 10px; margin-bottom: 10px; font-size: 0.9em; color: #444;"><pre>${txt}</pre></div>`;
+             }
+             if (out.data['image/png']) {
+               // Base64 Image
+               const imgData = Array.isArray(out.data['image/png']) ? out.data['image/png'].join('') : out.data['image/png'];
+               html += `<div style="margin-left: 10px; margin-bottom: 15px;"><img src="data:image/png;base64,${imgData}" style="max-width: 100%; box-shadow: 0 2px 4px rgba(0,0,0,0.1);" /></div>`;
+             }
+           }
+         });
+      }
+      html += '<div style="height: 10px;"></div>'; // Spacer
+    });
+  }
+  html += '</div>';
+  return html;
+};
+
+// --- GESTURE ZOOM WRAPPER ---
 const ZoomWrapper = ({ children }) => {
   const containerRef = useRef(null);
   const contentRef = useRef(null);
-  
-  // State stored in Refs for 60FPS performance (No Re-renders)
-  const state = useRef({
-    scale: 1,
-    startDist: 0,
-  });
+  const state = useRef({ scale: 1, startDist: 0 });
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    // GPU Accelerated Update
     const updateTransform = () => {
       if (contentRef.current) {
         const { scale } = state.current;
         contentRef.current.style.transform = `scale(${scale})`;
-        // Important: Adjust width so scrolling works when zoomed in
         contentRef.current.style.width = scale > 1 ? `${scale * 100}%` : '100%';
       }
     };
 
-    // --- TOUCH (Mobile Pinch) ---
     const handleTouchStart = (e) => {
       if (e.touches.length === 2) {
         e.preventDefault();
-        const touch1 = e.touches[0];
-        const touch2 = e.touches[1];
-        state.current.startDist = Math.hypot(touch1.pageX - touch2.pageX, touch1.pageY - touch2.pageY);
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        state.current.startDist = Math.hypot(t1.pageX - t2.pageX, t1.pageY - t2.pageY);
       }
     };
 
     const handleTouchMove = (e) => {
       if (e.touches.length === 2) {
         e.preventDefault();
-        const touch1 = e.touches[0];
-        const touch2 = e.touches[1];
-        const newDist = Math.hypot(touch1.pageX - touch2.pageX, touch1.pageY - touch2.pageY);
-
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        const newDist = Math.hypot(t1.pageX - t2.pageX, t1.pageY - t2.pageY);
         if (state.current.startDist > 0) {
            const scaleChange = newDist / state.current.startDist;
-           // Apply change
            let newScale = state.current.scale * scaleChange;
-           // BOUNDARY FIX: Lock min to 1.0 (Fit Screen) and Max to 4.0
            newScale = Math.max(1.0, Math.min(newScale, 4.0));
-           
            state.current.scale = newScale;
-           state.current.startDist = newDist; // Update distance for smooth continuous pinch
+           state.current.startDist = newDist; 
            updateTransform();
         }
       }
     };
 
-    // --- WHEEL (Desktop Ctrl+Scroll) ---
     const handleWheel = (e) => {
       if (e.ctrlKey) {
         e.preventDefault();
-        
-        // SENSITIVITY FIX: 
-        // Mouse wheels usually send deltaY = 100.
-        // Previous factor 0.01 made it jump 1.0 (100%) instantly.
-        // New factor 0.001 makes it jump 0.1 (10%) per tick. Much smoother.
         const delta = -e.deltaY * 0.001; 
-        
         let newScale = state.current.scale + delta;
-        // BOUNDARY FIX: Lock min to 1.0
         newScale = Math.max(1.0, Math.min(newScale, 4.0));
-        
         state.current.scale = newScale;
         updateTransform();
       }
     };
 
-    // Attach Listeners (Passive: false required to prevent browser zoom)
     container.addEventListener('touchstart', handleTouchStart, { passive: false });
     container.addEventListener('touchmove', handleTouchMove, { passive: false });
     container.addEventListener('wheel', handleWheel, { passive: false });
@@ -107,20 +147,9 @@ const ZoomWrapper = ({ children }) => {
   }, []);
 
   return (
-    <div 
-      ref={containerRef} 
-      className="relative w-full h-full flex flex-col overflow-hidden bg-gray-50 touch-pan-x touch-pan-y"
-    >
+    <div ref={containerRef} className="relative w-full h-full flex flex-col overflow-hidden bg-gray-50 touch-pan-x touch-pan-y">
       <div className="flex-1 overflow-auto p-4 w-full h-full">
-        <div 
-          ref={contentRef}
-          className="origin-top-left transition-transform duration-75 ease-out will-change-transform"
-          style={{ 
-            width: '100%', 
-            minHeight: '100%',
-            backfaceVisibility: 'hidden' // GPU Optimization
-          }}
-        >
+        <div ref={contentRef} className="origin-top-left transition-transform duration-75 ease-out will-change-transform" style={{ width: '100%', minHeight: '100%', backfaceVisibility: 'hidden' }}>
           {children}
         </div>
       </div>
@@ -136,7 +165,10 @@ const EXT_MAP = {
   data: ['json','yaml','yml','toml','ini','cfg','conf','env', 'sql','db','sqlite','psql', 'md','tex','rst'],
   script: ['sh','bash','zsh', 'bat','cmd','ps1','vbs', 'dockerfile','makefile','cmake','vagrantfile'],
   niche: ['hs','scala','erl','ex','exs','clj', 'v','r','jl', 'txt','rtf','log'],
-  office: ['docx','doc', 'xlsx','xls','csv', 'pptx','ppt','ppsx', 'odt','ods','odp', 'epub', 'ipynb', 'parquet'],
+  // LOCAL HANDLING: These will use JS libraries, NOT the server.
+  local_office: ['docx', 'xlsx', 'xls', 'csv', 'odt', 'ipynb'], 
+  // SERVER ONLY: Only these complex binary files will wait for the server
+  server_office: ['pptx','ppt','ppsx', 'odp', 'epub', 'parquet', 'doc'], 
   image: ['jpg','jpeg','png','gif','bmp','tiff','webp','heic','svg','ico'],
   video: ['mp4','mkv','avi','mov','wmv','flv','webm'],
   audio: ['mp3','wav','aac','flac','ogg','m4a','wma'],
@@ -144,7 +176,6 @@ const EXT_MAP = {
   pdf: ['pdf']
 };
 
-const BACKEND_EXTS = EXT_MAP.office;
 const TEXT_EXTS = [...EXT_MAP.code, ...EXT_MAP.web, ...EXT_MAP.mobile, ...EXT_MAP.data, ...EXT_MAP.script, ...EXT_MAP.niche];
 
 const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
@@ -156,14 +187,13 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
   const [internalBackendData, setInternalBackendData] = useState(null);
   const [internalLoading, setInternalLoading] = useState(false);
 
-  // --- ZIP LOADING ---
   useEffect(() => {
     if ((fileType === 'zip' || fileType === 'jar') && file) {
       JSZip.loadAsync(file).then((zip) => setZipContent(zip));
     }
   }, [file, fileType]);
 
-  // --- HANDLE ZIP CLICK ---
+  // --- HANDLE ZIP CLICK (FAST LOCAL ROUTING) ---
   const handleZipFileClick = async (relativePath) => {
     if (!zipContent) return;
     const zipObj = zipContent.files[relativePath];
@@ -176,21 +206,48 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
 
     const ext = relativePath.split('.').pop().toLowerCase();
     setInternalFileType(ext);
+    
+    // Get file as Blob
     const blob = await zipObj.async("blob");
     const url = URL.createObjectURL(blob);
     setInternalFileUrl(url);
 
-    if (BACKEND_EXTS.includes(ext)) {
-      const formData = new FormData();
-      const virtualFile = new File([blob], relativePath, { type: blob.type });
-      formData.append('file', virtualFile);
-      try {
+    try {
+      // 1. INSTANT LOCAL: Excel/CSV
+      if (['xlsx', 'xls', 'csv'].includes(ext)) {
+        const arrayBuffer = await blob.arrayBuffer();
+        const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const html = XLSX.utils.sheet_to_html(workbook.Sheets[sheetName]);
+        setInternalBackendData({ type: 'html_table', content: html });
+      }
+      // 2. INSTANT LOCAL: Word (.docx)
+      else if (['docx'].includes(ext)) {
+        const arrayBuffer = await blob.arrayBuffer();
+        const result = await mammoth.convertToHtml({ arrayBuffer });
+        setInternalBackendData({ type: 'html_doc', content: result.value });
+      }
+      // 3. INSTANT LOCAL: Jupyter Notebook (.ipynb)
+      else if (['ipynb'].includes(ext)) {
+        const html = await convertIpynbToHtml(blob);
+        setInternalBackendData({ type: 'html_doc', content: html });
+      }
+      // 4. SERVER FALLBACK (Only for PPTX, Old Docs)
+      else if (EXT_MAP.server_office.includes(ext)) {
+        const formData = new FormData();
+        const virtualFile = new File([blob], relativePath, { type: blob.type });
+        formData.append('file', virtualFile);
         const res = await axios.post(`${API_URL}/detect-and-convert`, formData);
         setInternalBackendData(res.data);
-      } catch (e) { console.error(e); }
-    } else if (TEXT_EXTS.includes(ext)) {
-      const text = await zipObj.async("string");
-      setInternalFileContent(text);
+      } 
+      // 5. TEXT / CODE
+      else if (TEXT_EXTS.includes(ext)) {
+        const text = await zipObj.async("string");
+        setInternalFileContent(text);
+      }
+      // 6. PDF, IMAGES, VIDEO: Fall through (handled by URL)
+    } catch (e) {
+      console.error("Local conversion failed", e);
     }
     
     setInternalLoading(false);
@@ -206,7 +263,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
   const renderContent = (type, url, content, data, fileName) => {
     let contentComponent = null;
 
-    // 1. BACKEND CONTENT (Excel, Word)
+    // 1. DOCUMENTS & TABLES (Word, Excel, Notebooks)
     if (data?.type === 'html_table' || data?.type === 'html_doc') {
       contentComponent = (
         <div>
@@ -260,7 +317,6 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     return <ZoomWrapper>{contentComponent}</ZoomWrapper>;
   };
 
-  // --- MAIN RENDER ---
   if (selectedZipFile) {
     return (
       <div className="flex flex-col h-full">
@@ -269,7 +325,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
           <span className="text-gray-500 text-sm truncate">/ {selectedZipFile}</span>
         </div>
         <div className="flex-1 overflow-hidden relative">
-          {internalLoading ? <LoadingSpinner text="Converting File..." /> : renderContent(internalFileType, internalFileUrl, internalFileContent, internalBackendData, selectedZipFile)}
+          {internalLoading ? <LoadingSpinner text="Opening Locally..." /> : renderContent(internalFileType, internalFileUrl, internalFileContent, internalBackendData, selectedZipFile)}
         </div>
       </div>
     );
