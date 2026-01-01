@@ -1,8 +1,6 @@
 import React, { useState, useEffect, Suspense, useRef } from "react";
 import JSZip from "jszip";
 import axios from "axios";
-import * as XLSX from "xlsx"; // Local Excel
-import mammoth from "mammoth"; // Local Word
 import { Loader2, Download, FileText, FolderOpen, ArrowLeft, FileQuestion, ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
 
 // Lazy Load Components
@@ -20,60 +18,43 @@ const LoadingSpinner = ({ text }) => (
   </div>
 );
 
-// --- LOCAL IPYNB PARSER (Zero Server Latency) ---
+// --- LOCAL IPYNB PARSER ---
 const convertIpynbToHtml = async (blob) => {
   const text = await blob.text();
   const json = JSON.parse(text);
   let html = '<div style="padding: 20px; font-family: monospace; max-width: 100%;">';
   
   if (json.cells) {
-    json.cells.forEach((cell, index) => {
-      // 1. Inputs (Code)
+    json.cells.forEach((cell) => {
       if (cell.cell_type === 'code') {
          const source = Array.isArray(cell.source) ? cell.source.join('') : cell.source;
          if (source.trim()) {
-           html += `<div style="background: #f5f5f5; padding: 10px; border-radius: 4px; margin-bottom: 5px; border-left: 4px solid #3b82f6; overflow-x: auto;">
-             <div style="color: #3b82f6; font-weight: bold; font-size: 0.8em; margin-bottom: 5px;">In [${cell.execution_count || ' '}]:</div>
-             <pre style="margin: 0; font-size: 13px;">${source}</pre>
-           </div>`;
+           html += `<div style="background: #f5f5f5; padding: 10px; border-radius: 4px; margin-bottom: 5px; border-left: 4px solid #3b82f6; overflow-x: auto;"><pre style="margin: 0; font-size: 13px;">${source}</pre></div>`;
          }
       } 
-      // 2. Markdown / Text
       else if (cell.cell_type === 'markdown') {
          const source = Array.isArray(cell.source) ? cell.source.join('') : cell.source;
-         // Simple cleanup for markdown bold/headers to make it readable
-         let formatted = source
-            .replace(/### (.*)/g, '<h3>$1</h3>')
-            .replace(/## (.*)/g, '<h2>$1</h2>')
-            .replace(/# (.*)/g, '<h1>$1</h1>')
-            .replace(/\*\*(.*)\*\*/g, '<b>$1</b>')
-            .replace(/\n/g, '<br>');
+         let formatted = source.replace(/### (.*)/g, '<h3>$1</h3>').replace(/## (.*)/g, '<h2>$1</h2>').replace(/# (.*)/g, '<h1>$1</h1>').replace(/\*\*(.*)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
          html += `<div style="padding: 10px; margin-bottom: 10px; font-family: sans-serif;">${formatted}</div>`;
       }
-
-      // 3. Outputs (Images & Text)
       if (cell.outputs) {
          cell.outputs.forEach(out => {
-           // Text Output
            if (out.text) {
              const txt = Array.isArray(out.text) ? out.text.join('') : out.text;
              html += `<div style="margin-left: 10px; margin-bottom: 10px; font-size: 0.9em; color: #444;"><pre>${txt}</pre></div>`;
            }
-           // Data Output (Images/Text)
            if (out.data) {
              if (out.data['text/plain']) {
                 const txt = Array.isArray(out.data['text/plain']) ? out.data['text/plain'].join('') : out.data['text/plain'];
                 html += `<div style="margin-left: 10px; margin-bottom: 10px; font-size: 0.9em; color: #444;"><pre>${txt}</pre></div>`;
              }
              if (out.data['image/png']) {
-               // Base64 Image
                const imgData = Array.isArray(out.data['image/png']) ? out.data['image/png'].join('') : out.data['image/png'];
                html += `<div style="margin-left: 10px; margin-bottom: 15px;"><img src="data:image/png;base64,${imgData}" style="max-width: 100%; box-shadow: 0 2px 4px rgba(0,0,0,0.1);" /></div>`;
              }
            }
          });
       }
-      html += '<div style="height: 10px;"></div>'; // Spacer
     });
   }
   html += '</div>';
@@ -165,9 +146,7 @@ const EXT_MAP = {
   data: ['json','yaml','yml','toml','ini','cfg','conf','env', 'sql','db','sqlite','psql', 'md','tex','rst'],
   script: ['sh','bash','zsh', 'bat','cmd','ps1','vbs', 'dockerfile','makefile','cmake','vagrantfile'],
   niche: ['hs','scala','erl','ex','exs','clj', 'v','r','jl', 'txt','rtf','log'],
-  // LOCAL HANDLING: These will use JS libraries, NOT the server.
   local_office: ['docx', 'xlsx', 'xls', 'csv', 'odt', 'ipynb'], 
-  // SERVER ONLY: Only these complex binary files will wait for the server
   server_office: ['pptx','ppt','ppsx', 'odp', 'epub', 'parquet', 'doc'], 
   image: ['jpg','jpeg','png','gif','bmp','tiff','webp','heic','svg','ico'],
   video: ['mp4','mkv','avi','mov','wmv','flv','webm'],
@@ -193,7 +172,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     }
   }, [file, fileType]);
 
-  // --- HANDLE ZIP CLICK (FAST LOCAL ROUTING) ---
+  // --- HANDLE ZIP CLICK (DYNAMIC IMPORT OPTIMIZED) ---
   const handleZipFileClick = async (relativePath) => {
     if (!zipContent) return;
     const zipObj = zipContent.files[relativePath];
@@ -213,26 +192,28 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     setInternalFileUrl(url);
 
     try {
-      // 1. INSTANT LOCAL: Excel/CSV
+      // 1. DYNAMIC IMPORT EXCEL (Only downloads library if needed)
       if (['xlsx', 'xls', 'csv'].includes(ext)) {
+        const XLSX = await import('xlsx'); // Load library on demand
         const arrayBuffer = await blob.arrayBuffer();
         const workbook = XLSX.read(arrayBuffer, { type: 'array' });
         const sheetName = workbook.SheetNames[0];
         const html = XLSX.utils.sheet_to_html(workbook.Sheets[sheetName]);
         setInternalBackendData({ type: 'html_table', content: html });
       }
-      // 2. INSTANT LOCAL: Word (.docx)
+      // 2. DYNAMIC IMPORT WORD (Only downloads library if needed)
       else if (['docx'].includes(ext)) {
+        const mammoth = await import('mammoth'); // Load library on demand
         const arrayBuffer = await blob.arrayBuffer();
         const result = await mammoth.convertToHtml({ arrayBuffer });
         setInternalBackendData({ type: 'html_doc', content: result.value });
       }
-      // 3. INSTANT LOCAL: Jupyter Notebook (.ipynb)
+      // 3. INSTANT LOCAL: Jupyter Notebook
       else if (['ipynb'].includes(ext)) {
         const html = await convertIpynbToHtml(blob);
         setInternalBackendData({ type: 'html_doc', content: html });
       }
-      // 4. SERVER FALLBACK (Only for PPTX, Old Docs)
+      // 4. SERVER FALLBACK
       else if (EXT_MAP.server_office.includes(ext)) {
         const formData = new FormData();
         const virtualFile = new File([blob], relativePath, { type: blob.type });
@@ -245,7 +226,6 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
         const text = await zipObj.async("string");
         setInternalFileContent(text);
       }
-      // 6. PDF, IMAGES, VIDEO: Fall through (handled by URL)
     } catch (e) {
       console.error("Local conversion failed", e);
     }
@@ -263,7 +243,6 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
   const renderContent = (type, url, content, data, fileName) => {
     let contentComponent = null;
 
-    // 1. DOCUMENTS & TABLES (Word, Excel, Notebooks)
     if (data?.type === 'html_table' || data?.type === 'html_doc') {
       contentComponent = (
         <div>
@@ -277,19 +256,15 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
         </div>
       );
     }
-    // 2. IMAGES
     else if (EXT_MAP.image.includes(type) || data?.type === 'image_pass') {
       contentComponent = <img src={url} className="max-w-none object-contain mx-auto" style={{ minWidth: 'auto' }} />;
     }
-    // 3. PDF
     else if (type === 'pdf' || data?.type === 'pdf_pass') {
        return <Suspense fallback={<LoadingSpinner />}><PdfRenderer url={url} /></Suspense>;
     }
-    // 4. 3D
     else if (EXT_MAP.model.includes(type)) {
       contentComponent = <div className="h-[500px] w-full"><Suspense fallback={<LoadingSpinner />}><ModelViewer url={url} /></Suspense></div>;
     }
-    // 5. Code
     else if (content || data?.type === 'text_content') {
       const displayContent = data?.type === 'text_content' ? data.content : content;
       const getLanguage = (e) => ({ js:'javascript', py:'python', java:'java', html:'html', css:'css', json:'json', sql:'sql', md:'markdown' }[e] || "plaintext");
@@ -299,10 +274,8 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
         </div>
       );
     }
-    // 6. Media
     else if (EXT_MAP.video.includes(type)) return <video controls src={url} className="max-w-full" />;
     else if (EXT_MAP.audio.includes(type)) return <div className="flex items-center justify-center h-60"><audio controls src={url} /></div>;
-    // 7. Fallback
     else {
       return (
         <div className="flex flex-col items-center justify-center h-full bg-gray-50 text-gray-600 p-6 text-center">
