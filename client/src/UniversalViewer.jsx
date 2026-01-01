@@ -18,19 +18,14 @@ const LoadingSpinner = ({ text }) => (
   </div>
 );
 
-// --- GESTURE ZOOM WRAPPER (Pinch-to-Zoom) ---
+// --- GESTURE ZOOM WRAPPER (Fixed Sensitivity & Boundaries) ---
 const ZoomWrapper = ({ children }) => {
   const containerRef = useRef(null);
   const contentRef = useRef(null);
   
-  // State is stored in Refs for performance (No React Re-renders)
+  // State stored in Refs for 60FPS performance (No Re-renders)
   const state = useRef({
     scale: 1,
-    panning: false,
-    pointX: 0,
-    pointY: 0,
-    startX: 0,
-    startY: 0,
     startDist: 0,
   });
 
@@ -38,23 +33,22 @@ const ZoomWrapper = ({ children }) => {
     const container = containerRef.current;
     if (!container) return;
 
-    // Helper to update CSS directly (GPU Accelerated)
+    // GPU Accelerated Update
     const updateTransform = () => {
       if (contentRef.current) {
         const { scale } = state.current;
         contentRef.current.style.transform = `scale(${scale})`;
-        // Expanding width ensures we can scroll to see edges when zoomed in
+        // Important: Adjust width so scrolling works when zoomed in
         contentRef.current.style.width = scale > 1 ? `${scale * 100}%` : '100%';
       }
     };
 
-    // --- TOUCH HANDLERS (Mobile Pinch) ---
+    // --- TOUCH (Mobile Pinch) ---
     const handleTouchStart = (e) => {
       if (e.touches.length === 2) {
-        e.preventDefault(); // Stop browser zooming
+        e.preventDefault();
         const touch1 = e.touches[0];
         const touch2 = e.touches[1];
-        // Calculate distance between fingers
         state.current.startDist = Math.hypot(touch1.pageX - touch2.pageX, touch1.pageY - touch2.pageY);
       }
     };
@@ -66,33 +60,41 @@ const ZoomWrapper = ({ children }) => {
         const touch2 = e.touches[1];
         const newDist = Math.hypot(touch1.pageX - touch2.pageX, touch1.pageY - touch2.pageY);
 
-        // Calculate zoom factor
-        const scaleChange = newDist / state.current.startDist;
-        
-        // Apply smooth limit (0.5x to 3x)
-        let newScale = state.current.scale * scaleChange;
-        newScale = Math.max(0.5, Math.min(newScale, 3.5));
-        
-        state.current.scale = newScale;
-        state.current.startDist = newDist; // Reset for smooth continuous zoom
-        
-        updateTransform();
+        if (state.current.startDist > 0) {
+           const scaleChange = newDist / state.current.startDist;
+           // Apply change
+           let newScale = state.current.scale * scaleChange;
+           // BOUNDARY FIX: Lock min to 1.0 (Fit Screen) and Max to 4.0
+           newScale = Math.max(1.0, Math.min(newScale, 4.0));
+           
+           state.current.scale = newScale;
+           state.current.startDist = newDist; // Update distance for smooth continuous pinch
+           updateTransform();
+        }
       }
     };
 
-    // --- WHEEL HANDLER (Desktop Ctrl+Scroll) ---
+    // --- WHEEL (Desktop Ctrl+Scroll) ---
     const handleWheel = (e) => {
       if (e.ctrlKey) {
         e.preventDefault();
-        const delta = e.deltaY * -0.01;
+        
+        // SENSITIVITY FIX: 
+        // Mouse wheels usually send deltaY = 100.
+        // Previous factor 0.01 made it jump 1.0 (100%) instantly.
+        // New factor 0.001 makes it jump 0.1 (10%) per tick. Much smoother.
+        const delta = -e.deltaY * 0.001; 
+        
         let newScale = state.current.scale + delta;
-        newScale = Math.max(0.5, Math.min(newScale, 3.5));
+        // BOUNDARY FIX: Lock min to 1.0
+        newScale = Math.max(1.0, Math.min(newScale, 4.0));
+        
         state.current.scale = newScale;
         updateTransform();
       }
     };
 
-    // Attach Listeners (Non-Passive for preventDefault support)
+    // Attach Listeners (Passive: false required to prevent browser zoom)
     container.addEventListener('touchstart', handleTouchStart, { passive: false });
     container.addEventListener('touchmove', handleTouchMove, { passive: false });
     container.addEventListener('wheel', handleWheel, { passive: false });
