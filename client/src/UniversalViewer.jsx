@@ -1,7 +1,7 @@
 import React, { useState, useEffect, Suspense, useRef } from "react";
 import JSZip from "jszip";
 import axios from "axios";
-import { Loader2, Download, FileText, FolderOpen, ArrowLeft, FileQuestion, ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
+import { Loader2, Download, FileText, FolderOpen, ArrowLeft, FileQuestion } from "lucide-react";
 
 // Lazy Load Components
 const Editor = React.lazy(() => import("@monaco-editor/react"));
@@ -18,56 +18,105 @@ const LoadingSpinner = ({ text }) => (
   </div>
 );
 
-// --- PERFORMANCE ZOOM WRAPPER (GPU ACCELERATED) ---
+// --- GESTURE ZOOM WRAPPER (Pinch-to-Zoom) ---
 const ZoomWrapper = ({ children }) => {
+  const containerRef = useRef(null);
   const contentRef = useRef(null);
-  const scaleRef = useRef(1);
+  
+  // State is stored in Refs for performance (No React Re-renders)
+  const state = useRef({
+    scale: 1,
+    panning: false,
+    pointX: 0,
+    pointY: 0,
+    startX: 0,
+    startY: 0,
+    startDist: 0,
+  });
 
-  const updateScale = (newScale) => {
-    scaleRef.current = newScale;
-    if (contentRef.current) {
-      // 1. Use 'transform' only (Visual scale). This does NOT trigger a browser Reflow.
-      contentRef.current.style.transform = `scale(${newScale})`;
-      
-      // 2. Hint the browser to prioritize this layer
-      contentRef.current.style.willChange = 'transform';
-    }
-  };
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
 
-  const zoomIn = () => {
-    // Limit max zoom to prevent memory spikes
-    const next = Math.min(2.5, scaleRef.current + 0.25);
-    updateScale(next);
-  };
+    // Helper to update CSS directly (GPU Accelerated)
+    const updateTransform = () => {
+      if (contentRef.current) {
+        const { scale } = state.current;
+        contentRef.current.style.transform = `scale(${scale})`;
+        // Expanding width ensures we can scroll to see edges when zoomed in
+        contentRef.current.style.width = scale > 1 ? `${scale * 100}%` : '100%';
+      }
+    };
 
-  const zoomOut = () => {
-    const next = Math.max(0.5, scaleRef.current - 0.25);
-    updateScale(next);
-  };
+    // --- TOUCH HANDLERS (Mobile Pinch) ---
+    const handleTouchStart = (e) => {
+      if (e.touches.length === 2) {
+        e.preventDefault(); // Stop browser zooming
+        const touch1 = e.touches[0];
+        const touch2 = e.touches[1];
+        // Calculate distance between fingers
+        state.current.startDist = Math.hypot(touch1.pageX - touch2.pageX, touch1.pageY - touch2.pageY);
+      }
+    };
 
-  const resetZoom = () => {
-    updateScale(1);
-  };
+    const handleTouchMove = (e) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        const touch1 = e.touches[0];
+        const touch2 = e.touches[1];
+        const newDist = Math.hypot(touch1.pageX - touch2.pageX, touch1.pageY - touch2.pageY);
+
+        // Calculate zoom factor
+        const scaleChange = newDist / state.current.startDist;
+        
+        // Apply smooth limit (0.5x to 3x)
+        let newScale = state.current.scale * scaleChange;
+        newScale = Math.max(0.5, Math.min(newScale, 3.5));
+        
+        state.current.scale = newScale;
+        state.current.startDist = newDist; // Reset for smooth continuous zoom
+        
+        updateTransform();
+      }
+    };
+
+    // --- WHEEL HANDLER (Desktop Ctrl+Scroll) ---
+    const handleWheel = (e) => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+        const delta = e.deltaY * -0.01;
+        let newScale = state.current.scale + delta;
+        newScale = Math.max(0.5, Math.min(newScale, 3.5));
+        state.current.scale = newScale;
+        updateTransform();
+      }
+    };
+
+    // Attach Listeners (Non-Passive for preventDefault support)
+    container.addEventListener('touchstart', handleTouchStart, { passive: false });
+    container.addEventListener('touchmove', handleTouchMove, { passive: false });
+    container.addEventListener('wheel', handleWheel, { passive: false });
+
+    return () => {
+      container.removeEventListener('touchstart', handleTouchStart);
+      container.removeEventListener('touchmove', handleTouchMove);
+      container.removeEventListener('wheel', handleWheel);
+    };
+  }, []);
 
   return (
-    <div className="relative w-full h-full flex flex-col overflow-hidden bg-gray-50">
-      {/* Floating Toolbar */}
-      <div className="absolute top-4 right-4 z-50 flex gap-2 bg-white/90 p-2 rounded-lg shadow-lg border backdrop-blur-sm">
-        <button onClick={zoomOut} className="p-2 active:bg-gray-200 rounded text-gray-700 touch-manipulation" title="Zoom Out"><ZoomOut size={20} /></button>
-        <button onClick={zoomIn} className="p-2 active:bg-gray-200 rounded text-gray-700 touch-manipulation" title="Zoom In"><ZoomIn size={20} /></button>
-        <button onClick={resetZoom} className="p-2 active:bg-gray-200 rounded text-gray-700 touch-manipulation" title="Reset"><RotateCcw size={18} /></button>
-      </div>
-
-      {/* Scrollable Area */}
-      <div className="flex-1 overflow-auto p-4 w-full h-full" style={{ touchAction: 'pan-x pan-y' }}>
+    <div 
+      ref={containerRef} 
+      className="relative w-full h-full flex flex-col overflow-hidden bg-gray-50 touch-pan-x touch-pan-y"
+    >
+      <div className="flex-1 overflow-auto p-4 w-full h-full">
         <div 
           ref={contentRef}
-          className="origin-top-left transition-transform duration-75 ease-out"
+          className="origin-top-left transition-transform duration-75 ease-out will-change-transform"
           style={{ 
-            width: 'max-content', // Let content decide width naturally
-            minWidth: '100%',
-            transformOrigin: 'top left',
-            backfaceVisibility: 'hidden' // GPU Trick to prevent flickering
+            width: '100%', 
+            minHeight: '100%',
+            backfaceVisibility: 'hidden' // GPU Optimization
           }}
         >
           {children}
@@ -119,7 +168,6 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     if (zipObj.dir) return;
 
     setInternalLoading(true);
-    
     setInternalBackendData(null);
     setInternalFileContent(null);
     setSelectedZipFile(relativePath);
@@ -160,7 +208,6 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     if (data?.type === 'html_table' || data?.type === 'html_doc') {
       contentComponent = (
         <div>
-          {/* CSS to make Table readable but NOT crash browser */}
           <style>{`
             table { border-collapse: collapse; background: white; } 
             th, td { border: 1px solid #ccc; padding: 6px; white-space: nowrap; font-size: 13px; color: #333; }
@@ -177,7 +224,6 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     }
     // 3. PDF
     else if (type === 'pdf' || data?.type === 'pdf_pass') {
-       // PDF has its own internal zoom, so we don't wrap it to avoid double-zoom conflicts
        return <Suspense fallback={<LoadingSpinner />}><PdfRenderer url={url} /></Suspense>;
     }
     // 4. 3D
