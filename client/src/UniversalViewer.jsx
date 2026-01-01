@@ -1,4 +1,4 @@
-import React, { useState, useEffect, Suspense } from "react";
+import React, { useState, useEffect, Suspense, useRef } from "react";
 import JSZip from "jszip";
 import axios from "axios";
 import { Loader2, Download, FileText, FolderOpen, ArrowLeft, FileQuestion, ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
@@ -12,37 +12,63 @@ const API_URL = "https://universal-file-opener.onrender.com";
 
 // --- HELPERS ---
 const LoadingSpinner = ({ text }) => (
-  <div className="flex items-center justify-center h-full text-blue-500 gap-2">
-    <Loader2 className="w-8 h-8 animate-spin" />
-    <span>{text || "Loading..."}</span>
+  <div className="flex flex-col items-center justify-center h-full text-blue-500 gap-3 p-6 text-center">
+    <Loader2 className="w-10 h-10 animate-spin" />
+    <span className="font-semibold text-lg">{text || "Loading..."}</span>
   </div>
 );
 
-// --- ZOOM & SCROLL WRAPPER ---
-// This adds Zoom Buttons and Scroll handling to ANY content
+// --- PERFORMANCE ZOOM WRAPPER (GPU ACCELERATED) ---
 const ZoomWrapper = ({ children }) => {
-  const [scale, setScale] = useState(1);
+  const contentRef = useRef(null);
+  const scaleRef = useRef(1);
+
+  const updateScale = (newScale) => {
+    scaleRef.current = newScale;
+    if (contentRef.current) {
+      // 1. Use 'transform' only (Visual scale). This does NOT trigger a browser Reflow.
+      contentRef.current.style.transform = `scale(${newScale})`;
+      
+      // 2. Hint the browser to prioritize this layer
+      contentRef.current.style.willChange = 'transform';
+    }
+  };
+
+  const zoomIn = () => {
+    // Limit max zoom to prevent memory spikes
+    const next = Math.min(2.5, scaleRef.current + 0.25);
+    updateScale(next);
+  };
+
+  const zoomOut = () => {
+    const next = Math.max(0.5, scaleRef.current - 0.25);
+    updateScale(next);
+  };
+
+  const resetZoom = () => {
+    updateScale(1);
+  };
 
   return (
     <div className="relative w-full h-full flex flex-col overflow-hidden bg-gray-50">
-      {/* Zoom Controls Toolbar */}
+      {/* Floating Toolbar */}
       <div className="absolute top-4 right-4 z-50 flex gap-2 bg-white/90 p-2 rounded-lg shadow-lg border backdrop-blur-sm">
-        <button onClick={() => setScale(s => Math.max(0.5, s - 0.2))} className="p-1 hover:bg-gray-100 rounded text-gray-700" title="Zoom Out"><ZoomOut size={20} /></button>
-        <span className="text-xs font-mono self-center w-12 text-center">{Math.round(scale * 100)}%</span>
-        <button onClick={() => setScale(s => Math.min(3.0, s + 0.2))} className="p-1 hover:bg-gray-100 rounded text-gray-700" title="Zoom In"><ZoomIn size={20} /></button>
-        <button onClick={() => setScale(1)} className="p-1 hover:bg-gray-100 rounded text-gray-700" title="Reset"><RotateCcw size={18} /></button>
+        <button onClick={zoomOut} className="p-2 active:bg-gray-200 rounded text-gray-700 touch-manipulation" title="Zoom Out"><ZoomOut size={20} /></button>
+        <button onClick={zoomIn} className="p-2 active:bg-gray-200 rounded text-gray-700 touch-manipulation" title="Zoom In"><ZoomIn size={20} /></button>
+        <button onClick={resetZoom} className="p-2 active:bg-gray-200 rounded text-gray-700 touch-manipulation" title="Reset"><RotateCcw size={18} /></button>
       </div>
 
-      {/* Scrollable Content Area */}
+      {/* Scrollable Area */}
       <div className="flex-1 overflow-auto p-4 w-full h-full" style={{ touchAction: 'pan-x pan-y' }}>
         <div 
+          ref={contentRef}
+          className="origin-top-left transition-transform duration-75 ease-out"
           style={{ 
-            transform: `scale(${scale})`, 
+            width: 'max-content', // Let content decide width naturally
+            minWidth: '100%',
             transformOrigin: 'top left',
-            width: scale > 1 ? `${scale * 100}%` : '100%', // Expand container when zooming in
-            minHeight: '100%'
+            backfaceVisibility: 'hidden' // GPU Trick to prevent flickering
           }}
-          className="transition-transform duration-200 ease-out origin-top-left"
         >
           {children}
         </div>
@@ -51,23 +77,15 @@ const ZoomWrapper = ({ children }) => {
   );
 };
 
-// --- MEGA EXTENSION LISTS ---
+// --- EXTENSION MAPS ---
 const EXT_MAP = {
-  // 1. General & System
   code: ['c','cpp','cc','cxx','h','hpp','hh','hxx', 'java','class','jar', 'py','pyc','pyd','pyo','pyw', 'cs','csproj','sln', 'rs', 'go'],
-  // 2. Web
   web: ['html','htm','css','js','mjs', 'ts','tsx', 'php','php3','php4','phtml','rb', 'jsx','vue','svelte','erb', 'sass','scss','less','styl'],
-  // 3. Mobile
   mobile: ['kt','xml','gradle', 'swift','m', 'dart'],
-  // 4. Data & Config
   data: ['json','yaml','yml','toml','ini','cfg','conf','env', 'sql','db','sqlite','psql', 'md','tex','rst'],
-  // 5. Scripting
   script: ['sh','bash','zsh', 'bat','cmd','ps1','vbs', 'dockerfile','makefile','cmake','vagrantfile'],
-  // 6. Niche
   niche: ['hs','scala','erl','ex','exs','clj', 'v','r','jl', 'txt','rtf','log'],
-  // Backend Processed (Office, Data, Ebooks)
   office: ['docx','doc', 'xlsx','xls','csv', 'pptx','ppt','ppsx', 'odt','ods','odp', 'epub', 'ipynb', 'parquet'],
-  // Media
   image: ['jpg','jpeg','png','gif','bmp','tiff','webp','heic','svg','ico'],
   video: ['mp4','mkv','avi','mov','wmv','flv','webm'],
   audio: ['mp3','wav','aac','flac','ogg','m4a','wma'],
@@ -75,7 +93,6 @@ const EXT_MAP = {
   pdf: ['pdf']
 };
 
-// Flatten lists for easy checking
 const BACKEND_EXTS = EXT_MAP.office;
 const TEXT_EXTS = [...EXT_MAP.code, ...EXT_MAP.web, ...EXT_MAP.mobile, ...EXT_MAP.data, ...EXT_MAP.script, ...EXT_MAP.niche];
 
@@ -88,20 +105,21 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
   const [internalBackendData, setInternalBackendData] = useState(null);
   const [internalLoading, setInternalLoading] = useState(false);
 
-  // --- 1. ZIP LOADING ---
+  // --- ZIP LOADING ---
   useEffect(() => {
     if ((fileType === 'zip' || fileType === 'jar') && file) {
       JSZip.loadAsync(file).then((zip) => setZipContent(zip));
     }
   }, [file, fileType]);
 
-  // --- 2. HANDLE ZIP FILE CLICK ---
+  // --- HANDLE ZIP CLICK ---
   const handleZipFileClick = async (relativePath) => {
     if (!zipContent) return;
     const zipObj = zipContent.files[relativePath];
     if (zipObj.dir) return;
 
     setInternalLoading(true);
+    
     setInternalBackendData(null);
     setInternalFileContent(null);
     setSelectedZipFile(relativePath);
@@ -124,6 +142,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
       const text = await zipObj.async("string");
       setInternalFileContent(text);
     }
+    
     setInternalLoading(false);
   };
 
@@ -135,26 +154,20 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
   };
 
   const renderContent = (type, url, content, data, fileName) => {
-    
-    // --- CONTENT GENERATION ---
     let contentComponent = null;
 
-    // 1. BACKEND CONTENT (Excel, Word, HTML)
+    // 1. BACKEND CONTENT (Excel, Word)
     if (data?.type === 'html_table' || data?.type === 'html_doc') {
       contentComponent = (
         <div>
-          {/* CSS to force Excel/Table scrolling and borders */}
+          {/* CSS to make Table readable but NOT crash browser */}
           <style>{`
-            table { border-collapse: collapse; min-width: 100%; width: max-content; background: white; } 
-            th, td { border: 1px solid #ccc; padding: 8px; white-space: nowrap; font-size: 14px; color: #333; }
+            table { border-collapse: collapse; background: white; } 
+            th, td { border: 1px solid #ccc; padding: 6px; white-space: nowrap; font-size: 13px; color: #333; }
             th { background-color: #f3f4f6; font-weight: bold; text-align: left; }
             tr:nth-child(even) { background-color: #f9fafb; }
-            tr:hover { background-color: #e5e7eb; }
           `}</style>
-          <div 
-            dangerouslySetInnerHTML={{ __html: data.content }} 
-            className="prose max-w-none bg-white shadow-sm p-4 inline-block" 
-          />
+          <div dangerouslySetInnerHTML={{ __html: data.content }} className="prose max-w-none bg-white shadow-sm p-4 inline-block" />
         </div>
       );
     }
@@ -164,31 +177,26 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     }
     // 3. PDF
     else if (type === 'pdf' || data?.type === 'pdf_pass') {
-       contentComponent = <Suspense fallback={<LoadingSpinner />}><PdfRenderer url={url} /></Suspense>;
+       // PDF has its own internal zoom, so we don't wrap it to avoid double-zoom conflicts
+       return <Suspense fallback={<LoadingSpinner />}><PdfRenderer url={url} /></Suspense>;
     }
-    // 4. 3D Models
+    // 4. 3D
     else if (EXT_MAP.model.includes(type)) {
       contentComponent = <div className="h-[500px] w-full"><Suspense fallback={<LoadingSpinner />}><ModelViewer url={url} /></Suspense></div>;
     }
-    // 5. Code & Text
+    // 5. Code
     else if (content || data?.type === 'text_content') {
       const displayContent = data?.type === 'text_content' ? data.content : content;
       const getLanguage = (e) => ({ js:'javascript', py:'python', java:'java', html:'html', css:'css', json:'json', sql:'sql', md:'markdown' }[e] || "plaintext");
       contentComponent = (
         <div className="h-[800px] w-full bg-[#1e1e1e]"> 
-          <Suspense fallback={<LoadingSpinner text="Loading Editor..." />}>
-            <Editor height="100%" language={getLanguage(type)} value={displayContent} theme="vs-dark" options={{ readOnly: true, minimap: { enabled: false }, scrollBeyondLastLine: false }} />
-          </Suspense>
+          <Suspense fallback={<LoadingSpinner text="Loading Editor..." />}><Editor height="100%" language={getLanguage(type)} value={displayContent} theme="vs-dark" options={{ readOnly: true, minimap: { enabled: false } }} /></Suspense>
         </div>
       );
     }
-    // 6. Media (Video/Audio)
-    else if (EXT_MAP.video.includes(type)) {
-       contentComponent = <video controls src={url} className="max-w-full" />;
-    }
-    else if (EXT_MAP.audio.includes(type)) {
-       contentComponent = <div className="flex items-center justify-center h-60"><audio controls src={url} /></div>;
-    }
+    // 6. Media
+    else if (EXT_MAP.video.includes(type)) return <video controls src={url} className="max-w-full" />;
+    else if (EXT_MAP.audio.includes(type)) return <div className="flex items-center justify-center h-60"><audio controls src={url} /></div>;
     // 7. Fallback
     else {
       return (
@@ -201,13 +209,10 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
       );
     }
 
-    // Wrap almost everything in ZoomWrapper (Except Fallback)
     return <ZoomWrapper>{contentComponent}</ZoomWrapper>;
   };
 
-  // --- RENDER SWITCH ---
-
-  // I. Internal Zip File
+  // --- MAIN RENDER ---
   if (selectedZipFile) {
     return (
       <div className="flex flex-col h-full">
@@ -216,13 +221,12 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
           <span className="text-gray-500 text-sm truncate">/ {selectedZipFile}</span>
         </div>
         <div className="flex-1 overflow-hidden relative">
-          {internalLoading ? <LoadingSpinner text="Loading Internal File..." /> : renderContent(internalFileType, internalFileUrl, internalFileContent, internalBackendData, selectedZipFile)}
+          {internalLoading ? <LoadingSpinner text="Converting File..." /> : renderContent(internalFileType, internalFileUrl, internalFileContent, internalBackendData, selectedZipFile)}
         </div>
       </div>
     );
   }
 
-  // II. Zip List
   if ((fileType === 'zip' || fileType === 'jar') && zipContent) {
     return (
       <div className="p-4 h-full overflow-auto bg-gray-50">
@@ -242,17 +246,8 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     );
   }
 
-  // III. 7z (Download only)
-  if (fileType === '7z') return (
-       <div className="flex flex-col items-center justify-center h-full text-center p-6 bg-gray-50">
-         <FolderOpen className="w-16 h-16 text-yellow-600 mb-4" />
-         <h2 className="text-xl font-bold mb-2">7-Zip Archive (.7z)</h2>
-         <p className="max-w-md text-gray-600 mb-6">Browsing .7z files directly is too heavy for browsers. Please download locally.</p>
-         <a href={file ? URL.createObjectURL(file) : "#"} download={file?.name} className="bg-yellow-600 text-white px-6 py-3 rounded-lg hover:bg-yellow-700 transition flex items-center gap-2"><Download size={20} /> Download .7z File</a>
-       </div>
-  );
+  if (fileType === '7z') return <div className="flex flex-col items-center justify-center h-full text-center p-6 bg-gray-50"><FolderOpen className="w-16 h-16 text-yellow-600 mb-4" /><h2 className="text-xl font-bold mb-2">7-Zip Archive (.7z)</h2><p className="max-w-md text-gray-600 mb-6">Browsing .7z files directly is too heavy for browsers. Please download locally.</p><a href={file ? URL.createObjectURL(file) : "#"} download={file?.name} className="bg-yellow-600 text-white px-6 py-3 rounded-lg hover:bg-yellow-700 transition flex items-center gap-2"><Download size={20} /> Download .7z File</a></div>;
 
-  // IV. Main File
   return renderContent(fileType, file ? URL.createObjectURL(file) : null, fileContent, backendData, file?.name);
 };
 
