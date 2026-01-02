@@ -20,7 +20,7 @@ const LoadingSpinner = ({ text }) => (
   </div>
 );
 
-// --- 1. SMART ZIP NAVIGATOR (Fixed: Horizontal Scroll Enabled) ---
+// --- 1. SMART ZIP NAVIGATOR (Fixed: Horizontal Scrolling Enabled) ---
 const ZipNavigator = ({ zipContent, onFileClick }) => {
   const [currentPath, setCurrentPath] = useState(""); 
 
@@ -69,11 +69,11 @@ const ZipNavigator = ({ zipContent, onFileClick }) => {
         <span className="text-sm font-mono text-gray-700">{currentPath || "/"}</span>
       </div>
 
-      {/* File List (Fixed: Allows Horizontal Scrolling) */}
+      {/* File List (Fixed: w-max allows horizontal scroll) */}
       <div className="flex-1 overflow-auto p-2">
         <div className="flex flex-col gap-1 w-max min-w-full">
           {folders.map(folder => (
-            <div key={folder} onClick={() => setCurrentPath(prev => prev + folder + "/")} className="flex items-center gap-3 p-3 rounded-lg hover:bg-yellow-50 active:bg-yellow-100 cursor-pointer border border-transparent hover:border-yellow-200 transition">
+            <div key={folder} onClick={() => setCurrentPath(prev => prev + folder + "/")} className="flex items-center gap-3 p-3 rounded-lg hover:bg-yellow-50 active:bg-yellow-100 cursor-pointer border border-transparent hover:border-yellow-200 transition min-w-[300px]">
               <FolderOpen size={24} className="text-yellow-500 shrink-0" />
               <span className="font-semibold text-gray-700">{folder}</span>
               <ChevronRight size={16} className="text-gray-400 ml-auto pl-4" />
@@ -85,7 +85,7 @@ const ZipNavigator = ({ zipContent, onFileClick }) => {
              if (['png','jpg','jpeg','gif'].includes(ext)) Icon = FileImage;
              if (['js','py','html','css','java','cpp'].includes(ext)) Icon = FileCode;
              return (
-              <div key={file.name} onClick={() => onFileClick(file.fullPath)} className="flex items-center gap-3 p-3 rounded-lg hover:bg-blue-50 active:bg-blue-100 cursor-pointer border border-transparent hover:border-blue-200 transition">
+              <div key={file.name} onClick={() => onFileClick(file.fullPath)} className="flex items-center gap-3 p-3 rounded-lg hover:bg-blue-50 active:bg-blue-100 cursor-pointer border border-transparent hover:border-blue-200 transition min-w-[300px]">
                 <Icon size={24} className="text-blue-500 shrink-0" />
                 <span className="text-sm font-medium text-gray-700">{file.name}</span>
               </div>
@@ -118,11 +118,14 @@ const ZoomWrapper = ({ children, className = "" }) => {
 
         const scrollLeft = container.scrollLeft;
         const scrollTop = container.scrollTop;
+        
         const mouseX = centerX - rect.left;
         const mouseY = centerY - rect.top;
 
         content.style.transform = `scale(${newScale})`;
-        content.style.width = newScale > 1 ? `${newScale * 100}%` : '100%';
+        // FIX: width is set to fit-content to allow horizontal scrolling if native content is wide
+        content.style.width = newScale > 1 ? `${newScale * 100}%` : 'fit-content';
+        content.style.minWidth = '100%';
         content.style.transformOrigin = "top left";
         state.current.scale = newScale;
 
@@ -208,10 +211,10 @@ const PaginatedTable = ({ data }) => {
   `;
 
   return (
-    <div className="flex flex-col h-full w-full bg-white">
+    <div className="flex flex-col h-full w-max min-w-full bg-white">
       <div className="flex-1 overflow-auto" dangerouslySetInnerHTML={{ __html: html }} />
       {totalPages > 1 && (
-        <div className="flex items-center justify-between p-3 border-t bg-gray-50 shrink-0">
+        <div className="flex items-center justify-between p-3 border-t bg-gray-50 shrink-0 sticky bottom-0 left-0">
           <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} className="px-3 py-1 bg-white border rounded shadow-sm disabled:opacity-50">Prev</button>
           <span className="text-sm text-gray-600">Page {page + 1} of {totalPages}</span>
           <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page === totalPages - 1} className="px-3 py-1 bg-white border rounded shadow-sm disabled:opacity-50">Next</button>
@@ -221,12 +224,13 @@ const PaginatedTable = ({ data }) => {
   );
 };
 
-// --- 4. NOTEBOOK PARSER ---
+// --- 4. NOTEBOOK PARSER (Fixed: Removed max-width to allow scrolling) ---
 const convertIpynbToHtml = async (blob) => {
   try {
     const text = await blob.text();
     const json = JSON.parse(text);
-    let html = '<div style="padding: 20px; font-family: sans-serif;">';
+    // FIXED: Changed max-width: 100% to width: fit-content
+    let html = '<div style="padding: 20px; font-family: sans-serif; min-width: 100%; width: fit-content; box-sizing: border-box;">';
     json.cells?.forEach(cell => {
       if (cell.cell_type === 'code') {
         const src = (Array.isArray(cell.source) ? cell.source.join('') : cell.source).trim();
@@ -266,7 +270,6 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     if (zipObj.dir) return;
 
     setInternalLoading(true);
-    // Reset previous states
     setInternalBackendData(null); setInternalTableData(null); setInternalFileContent(null);
     setSelectedZipFile(path);
 
@@ -277,34 +280,47 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     setInternalFileUrl(url);
 
     try {
-      if (ext === 'ipynb') {
-         const html = await convertIpynbToHtml(blob);
-         setInternalBackendData({ type: 'html_doc', content: html });
-      } else if (['xlsx', 'xls'].includes(ext)) {
-         const ab = await blob.arrayBuffer();
-         const wb = XLSX.read(ab, { type: 'array' });
-         setInternalTableData(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 }));
-      } else if (ext === 'csv') {
-         const txt = await blob.text();
-         setInternalTableData(txt.split(/\r?\n/).map(r => r.split(',')).filter(r => r.length > 1));
-      } else if (ext === 'docx') {
+      if (['xlsx', 'xls', 'csv'].includes(ext)) {
+         if (ext === 'csv') {
+            const txt = await blob.text();
+            setInternalTableData(txt.split(/\r?\n/).map(r => r.split(',')).filter(r => r.length > 1));
+         } else {
+            const ab = await blob.arrayBuffer();
+            const wb = XLSX.read(ab, { type: 'array' });
+            setInternalTableData(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 }));
+         }
+      } 
+      else if (['docx'].includes(ext)) {
          const ab = await blob.arrayBuffer();
          const res = await mammoth.convertToHtml({ arrayBuffer: ab });
          setInternalBackendData({ type: 'html_doc', content: res.value });
-      } else if (['pptx','ppt','doc'].includes(ext)) {
+      }
+      else if (['ipynb'].includes(ext)) {
+         const html = await convertIpynbToHtml(blob);
+         setInternalBackendData({ type: 'html_doc', content: html });
+      }
+      else if (EXT_MAP.server_office.includes(ext)) {
          const fd = new FormData();
          fd.append('file', new File([blob], path, { type: blob.type }));
          const res = await axios.post(`${API_URL}/detect-and-convert`, fd);
          setInternalBackendData(res.data);
-      } else if (['js','py','java','c','cpp','html','css','json','md','txt','sql','xml'].includes(ext)) {
+      } 
+      else if (TEXT_EXTS.includes(ext)) {
          setInternalFileContent(await zipObj.async("string"));
       }
     } catch (e) { 
-        console.error(e); 
+        console.error(e);
         setInternalBackendData({ type: 'html_doc', content: '<div style="color:red;padding:20px;">Failed to load file.</div>' });
     } finally {
-        setInternalLoading(false); // FIXED: Loading stops even if error
+        setInternalLoading(false); // FIXED: Stops buffering even on error
     }
+  };
+
+  const closeInternalFile = () => {
+    setSelectedZipFile(null);
+    setInternalFileUrl(null);
+    setInternalFileContent(null);
+    setInternalBackendData(null);
   };
 
   const renderContent = (type, url, content, data, tableData, fileName) => {
@@ -313,7 +329,8 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     
     // B. Documents (Word, Notebooks)
     if (data?.type === 'html_table' || data?.type === 'html_doc') {
-      return <ZoomWrapper><div dangerouslySetInnerHTML={{ __html: data.content }} className="prose max-w-none bg-white shadow-sm p-4 w-full min-h-full" /></ZoomWrapper>;
+      // FIXED: w-full min-h-full allow expansion
+      return <ZoomWrapper><div dangerouslySetInnerHTML={{ __html: data.content }} className="prose max-w-none bg-white shadow-sm p-4 w-max min-w-full min-h-full" /></ZoomWrapper>;
     }
 
     // C. Images
@@ -321,7 +338,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
       return <ZoomWrapper><img src={url} className="max-w-full h-auto mx-auto my-4" /></ZoomWrapper>;
     }
 
-    // D. PDF (White BG Fix)
+    // D. PDF
     if (type === 'pdf' || data?.type === 'pdf_pass') {
        return (
          <ZoomWrapper className="bg-white">
@@ -334,7 +351,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
        );
     }
 
-    // E. Code (FIXED: wordWrap OFF so you can scroll horizontally)
+    // E. Code (FIXED: wordWrap OFF + Absolute Positioning)
     if (content || ['js','py','java','html','css','json','sql','md'].includes(type)) {
       return (
         <div className="absolute inset-0 w-full h-full bg-[#1e1e1e]">
@@ -360,7 +377,9 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
 
     // F. Media
     if (['mp4','webm'].includes(type)) return <div className="flex items-center justify-center h-full bg-black"><video controls src={url} className="max-w-full max-h-full" /></div>;
+    if (EXT_MAP.audio.includes(type)) return <div className="flex items-center justify-center h-60"><audio controls src={url} /></div>;
     
+    // G. Fallback
     return (
       <div className="flex flex-col items-center justify-center h-full bg-gray-50 text-gray-600 p-6 text-center">
         <FileQuestion className="w-12 h-12 text-gray-400 mb-4" />
@@ -374,7 +393,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     return (
       <div className="flex flex-col h-full bg-gray-100 relative">
         <div className="bg-white p-3 border-b flex items-center gap-3 shadow-sm z-20 shrink-0">
-          <button onClick={() => { setSelectedZipFile(null); setInternalFileUrl(null); }} className="flex items-center gap-1 text-sm font-semibold text-blue-600 hover:text-blue-800"><ArrowLeft size={18} /> Back</button>
+          <button onClick={closeInternalFile} className="flex items-center gap-1 text-sm font-semibold text-blue-600 hover:text-blue-800"><ArrowLeft size={18} /> Back</button>
           <span className="text-gray-700 text-sm font-medium truncate flex-1">/ {selectedZipFile}</span>
         </div>
         <div className="flex-1 overflow-hidden relative w-full h-full">
