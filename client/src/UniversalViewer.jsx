@@ -20,7 +20,7 @@ const LoadingSpinner = ({ text }) => (
   </div>
 );
 
-// --- 1. SMART ZIP NAVIGATOR (Fixed: Horizontal Scrolling Enabled) ---
+// --- 1. SMART ZIP NAVIGATOR (Horizontal Scroll Enabled) ---
 const ZipNavigator = ({ zipContent, onFileClick }) => {
   const [currentPath, setCurrentPath] = useState(""); 
 
@@ -69,7 +69,7 @@ const ZipNavigator = ({ zipContent, onFileClick }) => {
         <span className="text-sm font-mono text-gray-700">{currentPath || "/"}</span>
       </div>
 
-      {/* File List (Fixed: w-max allows horizontal scroll) */}
+      {/* File List (Horizontal Scroll Enabled) */}
       <div className="flex-1 overflow-auto p-2">
         <div className="flex flex-col gap-1 w-max min-w-full">
           {folders.map(folder => (
@@ -83,7 +83,7 @@ const ZipNavigator = ({ zipContent, onFileClick }) => {
              let Icon = FileText;
              const ext = file.name.split('.').pop().toLowerCase();
              if (['png','jpg','jpeg','gif'].includes(ext)) Icon = FileImage;
-             if (['js','py','html','css','java','cpp'].includes(ext)) Icon = FileCode;
+             if (['js','py','html','css','java','cpp','c'].includes(ext)) Icon = FileCode;
              return (
               <div key={file.name} onClick={() => onFileClick(file.fullPath)} className="flex items-center gap-3 p-3 rounded-lg hover:bg-blue-50 active:bg-blue-100 cursor-pointer border border-transparent hover:border-blue-200 transition min-w-[300px]">
                 <Icon size={24} className="text-blue-500 shrink-0" />
@@ -98,7 +98,7 @@ const ZipNavigator = ({ zipContent, onFileClick }) => {
   );
 };
 
-// --- 2. PRECISE ZOOM WRAPPER ---
+// --- 2. PRECISE ZOOM WRAPPER (Universal Horizontal Scroll Support) ---
 const ZoomWrapper = ({ children, className = "" }) => {
   const containerRef = useRef(null);
   const contentRef = useRef(null);
@@ -118,14 +118,13 @@ const ZoomWrapper = ({ children, className = "" }) => {
 
         const scrollLeft = container.scrollLeft;
         const scrollTop = container.scrollTop;
-        
         const mouseX = centerX - rect.left;
         const mouseY = centerY - rect.top;
 
         content.style.transform = `scale(${newScale})`;
-        // FIX: width is set to fit-content to allow horizontal scrolling if native content is wide
+        // FIX: 'fit-content' allows the element to be wide naturally, enabling horizontal scroll
         content.style.width = newScale > 1 ? `${newScale * 100}%` : 'fit-content';
-        content.style.minWidth = '100%';
+        content.style.minWidth = '100%'; // Ensures it at least fills screen
         content.style.transformOrigin = "top left";
         state.current.scale = newScale;
 
@@ -214,7 +213,7 @@ const PaginatedTable = ({ data }) => {
     <div className="flex flex-col h-full w-max min-w-full bg-white">
       <div className="flex-1 overflow-auto" dangerouslySetInnerHTML={{ __html: html }} />
       {totalPages > 1 && (
-        <div className="flex items-center justify-between p-3 border-t bg-gray-50 shrink-0 sticky bottom-0 left-0">
+        <div className="flex items-center justify-between p-3 border-t bg-gray-50 shrink-0 sticky bottom-0 left-0 w-full">
           <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} className="px-3 py-1 bg-white border rounded shadow-sm disabled:opacity-50">Prev</button>
           <span className="text-sm text-gray-600">Page {page + 1} of {totalPages}</span>
           <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page === totalPages - 1} className="px-3 py-1 bg-white border rounded shadow-sm disabled:opacity-50">Next</button>
@@ -224,19 +223,19 @@ const PaginatedTable = ({ data }) => {
   );
 };
 
-// --- 4. NOTEBOOK PARSER (Fixed: Removed max-width to allow scrolling) ---
+// --- 4. NOTEBOOK PARSER (Horizontal Scroll Optimized) ---
 const convertIpynbToHtml = async (blob) => {
   try {
     const text = await blob.text();
     const json = JSON.parse(text);
-    // FIXED: Changed max-width: 100% to width: fit-content
+    // FIX: 'width: fit-content' ensures container expands for wide code blocks
     let html = '<div style="padding: 20px; font-family: sans-serif; min-width: 100%; width: fit-content; box-sizing: border-box;">';
     json.cells?.forEach(cell => {
       if (cell.cell_type === 'code') {
         const src = (Array.isArray(cell.source) ? cell.source.join('') : cell.source).trim();
         if(src) html += `<div style="background:#f8fafc; padding:10px; border:1px solid #e2e8f0; border-radius:4px; margin-bottom:10px; font-family:monospace; font-size:13px; overflow-x:auto;">${src}</div>`;
         cell.outputs?.forEach(o => {
-           if(o.text) html += `<pre style="font-size:12px; color:#475569; margin:0 0 10px 10px;">${(Array.isArray(o.text) ? o.text.join('') : o.text)}</pre>`;
+           if(o.text) html += `<pre style="font-size:12px; color:#475569; margin:0 0 10px 10px; overflow-x:auto;">${(Array.isArray(o.text) ? o.text.join('') : o.text)}</pre>`;
            if(o.data?.['image/png']) html += `<img src="data:image/png;base64,${(Array.isArray(o.data['image/png']) ? o.data['image/png'].join('') : o.data['image/png'])}" style="max-width:100%; margin:10px 0;" />`;
         });
       } else if (cell.cell_type === 'markdown') {
@@ -312,7 +311,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
         console.error(e);
         setInternalBackendData({ type: 'html_doc', content: '<div style="color:red;padding:20px;">Failed to load file.</div>' });
     } finally {
-        setInternalLoading(false); // FIXED: Stops buffering even on error
+        setInternalLoading(false); 
     }
   };
 
@@ -329,7 +328,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     
     // B. Documents (Word, Notebooks)
     if (data?.type === 'html_table' || data?.type === 'html_doc') {
-      // FIXED: w-full min-h-full allow expansion
+      // FIX: w-max and min-w-full enable horizontal scrolling for wide content
       return <ZoomWrapper><div dangerouslySetInnerHTML={{ __html: data.content }} className="prose max-w-none bg-white shadow-sm p-4 w-max min-w-full min-h-full" /></ZoomWrapper>;
     }
 
@@ -338,11 +337,11 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
       return <ZoomWrapper><img src={url} className="max-w-full h-auto mx-auto my-4" /></ZoomWrapper>;
     }
 
-    // D. PDF
+    // D. PDF (Clean, White BG, Zoom Enabled)
     if (type === 'pdf' || data?.type === 'pdf_pass') {
        return (
          <ZoomWrapper className="bg-white">
-             <div className="flex flex-col items-center min-h-screen pt-4 pb-12">
+             <div className="flex flex-col items-center min-h-screen pb-12">
                 <div className="w-full md:w-[800px] lg:w-[900px] max-w-full shadow-lg">
                     <Suspense fallback={<LoadingSpinner />}><PdfRenderer url={url} /></Suspense>
                 </div>
@@ -351,8 +350,8 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
        );
     }
 
-    // E. Code (FIXED: wordWrap OFF + Absolute Positioning)
-    if (content || ['js','py','java','html','css','json','sql','md'].includes(type)) {
+    // E. Code (Horizontal Scroll Enabled, Full Screen)
+    if (content || ['js','py','java','html','css','json','sql','md','c','cpp'].includes(type)) {
       return (
         <div className="absolute inset-0 w-full h-full bg-[#1e1e1e]">
            <Suspense fallback={<LoadingSpinner text="Loading Editor..." />}>
@@ -367,7 +366,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
                    minimap: { enabled: false }, 
                    automaticLayout: true, 
                    scrollBeyondLastLine: false, 
-                   wordWrap: 'off' // FIXED: Horizontal Scroll Enabled
+                   wordWrap: 'off' // FIX: Enables horizontal scrolling for long code lines
                }} 
              />
            </Suspense>
@@ -393,7 +392,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     return (
       <div className="flex flex-col h-full bg-gray-100 relative">
         <div className="bg-white p-3 border-b flex items-center gap-3 shadow-sm z-20 shrink-0">
-          <button onClick={closeInternalFile} className="flex items-center gap-1 text-sm font-semibold text-blue-600 hover:text-blue-800"><ArrowLeft size={18} /> Back</button>
+          <button onClick={() => { setSelectedZipFile(null); setInternalFileUrl(null); }} className="flex items-center gap-1 text-sm font-semibold text-blue-600 hover:text-blue-800"><ArrowLeft size={18} /> Back</button>
           <span className="text-gray-700 text-sm font-medium truncate flex-1">/ {selectedZipFile}</span>
         </div>
         <div className="flex-1 overflow-hidden relative w-full h-full">
