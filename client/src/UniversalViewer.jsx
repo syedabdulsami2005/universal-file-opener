@@ -1,234 +1,410 @@
-import React, { useState, useEffect, Suspense, useRef, useMemo, useLayoutEffect, useCallback } from "react";
+import React, { useState, useEffect, Suspense, useRef, useMemo, useLayoutEffect } from "react";
 import JSZip from "jszip";
+import axios from "axios";
 import * as XLSX from "xlsx"; 
 import mammoth from "mammoth";
-import Papa from "papaparse"; 
-import hljs from "highlight.js"; 
-import "highlight.js/styles/vs2015.css"; 
-import { Loader2, Download, FileText, FolderOpen, ArrowLeft, FileQuestion, Eye, FileCode, FileImage, Home, Music, Video, Database, Box, Terminal, ChevronRight } from "lucide-react";
+import { Loader2, Download, FileText, FolderOpen, ArrowLeft, FileQuestion, ChevronLeft, ChevronRight, FileCode, FileImage, Home } from "lucide-react";
 
 // Lazy Load Components
 const Editor = React.lazy(() => import("@monaco-editor/react"));
 const ModelViewer = React.lazy(() => import("./ModelViewer"));
 const PdfRenderer = React.lazy(() => import("./PdfRenderer"));
 
-// --- CONFIGURATION ---
-const PREVIEW_SIZE = 2097152; // 2MB
+const API_URL = "https://universal-file-opener.onrender.com";
 
-// --- HELPER ICONS MAP ---
-const getIconForExt = (ext) => {
-  if (['jpg','jpeg','png','gif','webp','svg'].includes(ext)) return FileImage;
-  if (['mp4','webm','mkv'].includes(ext)) return Video;
-  if (['mp3','wav','ogg'].includes(ext)) return Music;
-  if (['js','jsx','ts','tsx','py','java','c','cpp','html','css'].includes(ext)) return FileCode;
-  if (['sql','db','sqlite','csv','xlsx'].includes(ext)) return Database;
-  if (['sh','bat','cmd'].includes(ext)) return Terminal;
-  return FileText;
-};
+// --- HELPERS ---
+const LoadingSpinner = ({ text }) => (
+  <div className="flex flex-col items-center justify-center h-full text-blue-500 gap-3 p-6 text-center">
+    <Loader2 className="w-10 h-10 animate-spin" />
+    <span className="font-semibold text-lg">{text || "Processing..."}</span>
+  </div>
+);
 
-// --- INSTANT CODE PREVIEW (Fixed: useEffect + loading state) ---
-const InstantCodePreview = ({ content, language }) => {
-  const codeRef = useRef(null);
-  const [highlighted, setHighlighted] = useState(false);
+// --- 1. SMART ZIP NAVIGATOR (Horizontal Scroll Enabled) ---
+const ZipNavigator = ({ zipContent, onFileClick }) => {
+  const [currentPath, setCurrentPath] = useState(""); 
 
-  useEffect(() => {
-    if (codeRef.current && content && content.length > 0) {
-      try {
-        const safeLang = hljs.getLanguage(language) ? language : 'plaintext';
-        codeRef.current.innerHTML = hljs.highlight(content, { language: safeLang }).value;
-        setHighlighted(true);
-      } catch (e) {
-        codeRef.current.textContent = content.substring(0, 5000) + '...'; // Safe fallback
-        setHighlighted(true);
+  const { folders, files } = useMemo(() => {
+    if (!zipContent) return { folders: [], files: [] };
+    const folderSet = new Set();
+    const fileList = [];
+
+    Object.keys(zipContent.files).forEach((path) => {
+      if (!path.startsWith(currentPath)) return; 
+      const relativePath = path.slice(currentPath.length);
+      if (!relativePath) return; 
+
+      const parts = relativePath.split('/');
+      if (parts.length > 1 || (parts.length === 1 && zipContent.files[path].dir)) {
+        folderSet.add(parts[0]);
+      } else {
+        fileList.push({ name: parts[0], fullPath: path });
       }
-    }
-  }, [content, language]);
+    });
 
-  if (!content || content.length === 0) {
-    return <div className="flex items-center justify-center h-full text-gray-500">Loading code...</div>;
-  }
+    return {
+      folders: Array.from(folderSet).sort(),
+      files: fileList.sort((a, b) => a.name.localeCompare(b.name))
+    };
+  }, [zipContent, currentPath]);
+
+  const goUp = () => {
+    const parts = currentPath.split('/').filter(p => p);
+    parts.pop();
+    setCurrentPath(parts.length > 0 ? parts.join('/') + '/' : "");
+  };
 
   return (
-    <pre className="m-0 p-4 text-sm font-mono leading-relaxed overflow-auto h-full text-gray-200 bg-[#1e1e1e]">
-      <code ref={codeRef} className={!highlighted ? 'opacity-50' : ''} />
-    </pre>
+    <div className="flex flex-col h-full bg-white">
+      {/* Navigation Bar */}
+      <div className="p-3 border-b bg-gray-50 flex items-center gap-2 shadow-sm shrink-0 overflow-x-auto whitespace-nowrap">
+        {currentPath ? (
+          <button onClick={goUp} className="flex items-center gap-1 text-sm font-bold text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-full transition bg-white border border-blue-100">
+            <ArrowLeft size={16} /> Back
+          </button>
+        ) : (
+          <div className="flex items-center gap-1 text-sm font-bold text-gray-500 px-2"><Home size={16} /> Root</div>
+        )}
+        <span className="text-gray-300">|</span>
+        <span className="text-sm font-mono text-gray-700">{currentPath || "/"}</span>
+      </div>
+
+      {/* File List (Horizontal Scroll Enabled) */}
+      <div className="flex-1 overflow-auto p-2">
+        <div className="flex flex-col gap-1 w-max min-w-full">
+          {folders.map(folder => (
+            <div key={folder} onClick={() => setCurrentPath(prev => prev + folder + "/")} className="flex items-center gap-3 p-3 rounded-lg hover:bg-yellow-50 active:bg-yellow-100 cursor-pointer border border-transparent hover:border-yellow-200 transition min-w-[300px]">
+              <FolderOpen size={24} className="text-yellow-500 shrink-0" />
+              <span className="font-semibold text-gray-700">{folder}</span>
+              <ChevronRight size={16} className="text-gray-400 ml-auto pl-4" />
+            </div>
+          ))}
+          {files.map(file => {
+             let Icon = FileText;
+             const ext = file.name.split('.').pop().toLowerCase();
+             if (['png','jpg','jpeg','gif'].includes(ext)) Icon = FileImage;
+             if (['js','py','html','css','java','cpp','c'].includes(ext)) Icon = FileCode;
+             return (
+              <div key={file.name} onClick={() => onFileClick(file.fullPath)} className="flex items-center gap-3 p-3 rounded-lg hover:bg-blue-50 active:bg-blue-100 cursor-pointer border border-transparent hover:border-blue-200 transition min-w-[300px]">
+                <Icon size={24} className="text-blue-500 shrink-0" />
+                <span className="text-sm font-medium text-gray-700">{file.name}</span>
+              </div>
+             );
+          })}
+          {folders.length === 0 && files.length === 0 && <div className="text-center p-8 text-gray-400 italic w-full">Empty Folder</div>}
+        </div>
+      </div>
+    </div>
   );
 };
 
-// --- ZIP NAVIGATOR (Fixed: pass ChevronRight) ---
-const ZipNavigator = ({ zipContent, onFileClick }) => {
-  // ... (keep your existing ZipNavigator code exactly as is)
-  // Just ensure ChevronRight is imported above
-  const { folders, files } = useMemo(() => {
-    // ... existing logic
-  }, [zipContent, currentPath]);
+// --- 2. PRECISE ZOOM WRAPPER (Universal Horizontal Scroll Support) ---
+const ZoomWrapper = ({ children, className = "" }) => {
+  const containerRef = useRef(null);
+  const contentRef = useRef(null);
+  const state = useRef({ scale: 1, startDist: 0 });
 
-  // ... rest unchanged
-};
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
 
-// --- PAGINATED TABLE (Unchanged) ---
-const PaginatedTable = ({ data }) => {
-  // ... keep exactly as is
-};
+    const updateZoom = (newScale, centerX, centerY) => {
+        const content = contentRef.current;
+        if (!content) return;
 
-// --- ZOOM WRAPPER (Unchanged) ---
-const ZoomWrapper = ({ children }) => {
-  // ... keep exactly as is
-};
+        const oldScale = state.current.scale;
+        const ratio = newScale / oldScale;
+        const rect = container.getBoundingClientRect();
 
-// --- FIXED MAIN PROCESSOR (Core Fix: Proper async handling) ---
-const UniversalViewer = ({ file, fileType }) => {
-  const [zipContent, setZipContent] = useState(null);
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [viewMode, setViewMode] = useState("preview");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+        const scrollLeft = container.scrollLeft;
+        const scrollTop = container.scrollTop;
+        const mouseX = centerX - rect.left;
+        const mouseY = centerY - rect.top;
 
-  // FIXED: Proper async file processor
-  const processFile = useCallback(async (fileInput, fileName) => {
-    setLoading(true);
-    setError(null);
-    setSelectedFile(null);
-    setViewMode("preview");
+        content.style.transform = `scale(${newScale})`;
+        // FIX: 'fit-content' allows the element to be wide naturally, enabling horizontal scroll
+        content.style.width = newScale > 1 ? `${newScale * 100}%` : 'fit-content';
+        content.style.minWidth = '100%'; // Ensures it at least fills screen
+        content.style.transformOrigin = "top left";
+        state.current.scale = newScale;
 
-    try {
-      const ext = fileName.split('.').pop().toLowerCase().toLowerCase();
-      let result = { name: fileName, ext, type: 'download', url: null };
+        container.scrollLeft = (scrollLeft + mouseX) * ratio - mouseX;
+        container.scrollTop = (scrollTop + mouseY) * ratio - mouseY;
+    };
 
-      // Handle JSZip object vs File/Blob
-      let contentBlob;
-      if (fileInput.async) { // JSZip entry
-        contentBlob = await fileInput.async("blob");
-      } else { // Direct file
-        contentBlob = fileInput.slice(0, PREVIEW_SIZE);
-      }
-
-      const fileUrl = URL.createObjectURL(contentBlob);
-      result.url = fileUrl;
-
-      // Type detection & processing
-      if (['jpg','jpeg','png','gif','webp','svg','bmp','ico'].includes(ext)) {
-        result.type = 'image';
-      } else if (['mp4','webm','mkv','mov'].includes(ext)) {
-        result.type = 'video';
-      } else if (['mp3','wav','ogg','m4a'].includes(ext)) {
-        result.type = 'audio';
-      } else if (ext === 'pdf') {
-        result.type = 'pdf';
-      } else if (['txt','md','js','jsx','ts','tsx','py','java','c','cpp','h','cs','go','rs','php','rb','html','css','scss','json','xml','yaml','sql','sh','bat','gradle','properties','log'].includes(ext)) {
-        result.type = 'code';
-        result.content = await contentBlob.text();
-      } else if (['xlsx', 'xls', 'xlsm'].includes(ext)) {
-        result.type = 'table';
-        const arrayBuffer = await contentBlob.arrayBuffer();
-        const wb = XLSX.read(arrayBuffer, { type: 'array' });
-        result.data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
-      } else if (ext === 'csv') {
-        result.type = 'table';
-        const text = await contentBlob.text();
-        result.data = Papa.parse(text, { header: false, preview: 1000 }).data;
-      } else if (ext === 'docx') {
-        result.type = 'html_doc';
-        const arrayBuffer = await contentBlob.arrayBuffer();
-        const mammothResult = await mammoth.convertToHtml({ arrayBuffer });
-        result.content = mammothResult.value;
-      } else if (['stl','obj'].includes(ext)) {
-        result.type = 'model';
-      }
-
-      setSelectedFile(result);
-    } catch (e) {
-      console.error("File processing error:", e);
-      setError(`Failed to process ${fileName}: ${e.message}`);
-      setSelectedFile({ name: fileName, type: 'download', error: e.message });
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  // FIXED: Initial load with proper async
-  useEffect(() => {
-    if (!file) return;
-
-    const init = async () => {
-      if (['zip', 'jar'].includes(fileType?.toLowerCase())) {
-        try {
-          const zip = await JSZip.loadAsync(file);
-          setZipContent(zip);
-          setSelectedFile(null); // Show navigator
-        } catch (e) {
-          setError("Invalid ZIP/JAR file");
-        }
-      } else {
-        await processFile(file, file?.name || "unknown");
+    const handleTouchStart = (e) => {
+      if (e.touches.length === 2) {
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        state.current.startDist = Math.hypot(t1.pageX - t2.pageX, t1.pageY - t2.pageY);
       }
     };
 
-    init();
-  }, [file, fileType, processFile]);
+    const handleTouchMove = (e) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        const newDist = Math.hypot(t1.pageX - t2.pageX, t1.pageY - t2.pageY);
+        if (state.current.startDist > 0) {
+           const scaleChange = newDist / state.current.startDist;
+           let newScale = state.current.scale * scaleChange;
+           newScale = Math.max(1.0, Math.min(newScale, 5.0));
+           const centerX = (t1.clientX + t2.clientX) / 2;
+           const centerY = (t1.clientY + t2.clientY) / 2;
+           updateZoom(newScale, centerX, centerY);
+           state.current.startDist = newDist; 
+        }
+      }
+    };
 
-  const handleZipClick = (path, name) => {
-    processFile(zipContent.files[path], name);
-  };
+    const handleWheel = (e) => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+        const delta = -e.deltaY * 0.001; 
+        let newScale = state.current.scale + delta;
+        newScale = Math.max(1.0, Math.min(newScale, 5.0));
+        updateZoom(newScale, e.clientX, e.clientY);
+      }
+    };
 
-  // --- RENDER (Fixed error handling + loading) ---
-  if (loading) {
-    return (
-      <div className="h-full flex flex-col items-center justify-center bg-gray-50 gap-4 p-8 text-center">
-        <Loader2 className="w-12 h-12 animate-spin text-blue-500" />
-        <div>
-          <div className="text-lg font-medium text-gray-700 mb-1">Processing file...</div>
-          <div className="text-sm text-gray-500">Instant preview in seconds</div>
-        </div>
-      </div>
-    );
-  }
+    container.addEventListener('touchstart', handleTouchStart, { passive: false });
+    container.addEventListener('touchmove', handleTouchMove, { passive: false });
+    container.addEventListener('wheel', handleWheel, { passive: false });
 
-  if (error) {
-    return (
-      <div className="h-full flex flex-col items-center justify-center bg-gray-50 gap-4 p-8 text-center">
-        <FileQuestion className="w-16 h-16 text-red-400" />
-        <div>
-          <h2 className="text-xl font-bold text-gray-800 mb-2">{error}</h2>
-          <p className="text-gray-600 mb-4">Try a different file or refresh.</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Zip navigator
-  if (zipContent && !selectedFile) {
-    return <ZipNavigator zipContent={zipContent} onFileClick={handleZipClick} />;
-  }
-
-  // Selected file viewer (keep your FileRenderer exactly as is)
-  if (selectedFile) {
-    return (
-      <div className="flex flex-col h-full bg-gray-100 relative">
-        {zipContent && (
-          <div className="bg-white p-3 border-b flex items-center gap-3 shadow-sm z-20 shrink-0">
-            <button 
-              onClick={() => setSelectedFile(null)} 
-              className="flex items-center gap-1 text-sm font-semibold text-blue-600 hover:text-blue-800 p-1 rounded"
-            >
-              <ArrowLeft size={18} /> Back to ZIP
-            </button>
-            <span className="text-gray-700 text-sm font-medium truncate flex-1">{selectedFile.name}</span>
-          </div>
-        )}
-        <div className="flex-1 overflow-hidden relative w-full h-full">
-          <FileRenderer viewState={selectedFile} viewMode={viewMode} setViewMode={setViewMode} />
-        </div>
-      </div>
-    );
-  }
+    return () => {
+      container.removeEventListener('touchstart', handleTouchStart);
+      container.removeEventListener('touchmove', handleTouchMove);
+      container.removeEventListener('wheel', handleWheel);
+    };
+  }, []);
 
   return (
-    <div className="h-full flex items-center justify-center text-gray-400">
-      <FileText className="w-12 h-12 mb-2" />
-      <div>No file selected</div>
+    <div ref={containerRef} className={`relative w-full h-full overflow-auto bg-gray-50 touch-pan-x touch-pan-y ${className}`}>
+      <div ref={contentRef} className="origin-top-left will-change-transform min-h-full" style={{ width: '100%', transition: 'transform 0.05s linear' }}>
+        {children}
+      </div>
     </div>
   );
+};
+
+// --- 3. PAGINATED TABLE ---
+const PaginatedTable = ({ data }) => {
+  const [page, setPage] = useState(0);
+  const rowsPerPage = 500;
+  const totalPages = Math.ceil(data.length / rowsPerPage);
+  const currentRows = data.slice(page * rowsPerPage, (page + 1) * rowsPerPage);
+
+  const html = `
+    <table style="border-collapse: collapse; background: white; width: 100%;">
+      ${currentRows.map((row, idx) => `
+        <tr style="background: ${idx % 2 === 0 ? '#fff' : '#f9fafb'}; border-bottom: 1px solid #eee;">
+          ${row.map((cell, cIdx) => {
+             const tag = (page === 0 && idx === 0) ? 'th' : 'td';
+             const bg = (page === 0 && idx === 0) ? 'background:#f3f4f6; font-weight:bold;' : '';
+             return `<${tag} style="padding: 8px; border: 1px solid #ddd; ${bg} white-space: nowrap;">${cell ?? ''}</${tag}>`;
+          }).join('')}
+        </tr>
+      `).join('')}
+    </table>
+  `;
+
+  return (
+    <div className="flex flex-col h-full w-max min-w-full bg-white">
+      <div className="flex-1 overflow-auto" dangerouslySetInnerHTML={{ __html: html }} />
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between p-3 border-t bg-gray-50 shrink-0 sticky bottom-0 left-0 w-full">
+          <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} className="px-3 py-1 bg-white border rounded shadow-sm disabled:opacity-50">Prev</button>
+          <span className="text-sm text-gray-600">Page {page + 1} of {totalPages}</span>
+          <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page === totalPages - 1} className="px-3 py-1 bg-white border rounded shadow-sm disabled:opacity-50">Next</button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// --- 4. NOTEBOOK PARSER (Horizontal Scroll Optimized) ---
+const convertIpynbToHtml = async (blob) => {
+  try {
+    const text = await blob.text();
+    const json = JSON.parse(text);
+    // FIX: 'width: fit-content' ensures container expands for wide code blocks
+    let html = '<div style="padding: 20px; font-family: sans-serif; min-width: 100%; width: fit-content; box-sizing: border-box;">';
+    json.cells?.forEach(cell => {
+      if (cell.cell_type === 'code') {
+        const src = (Array.isArray(cell.source) ? cell.source.join('') : cell.source).trim();
+        if(src) html += `<div style="background:#f8fafc; padding:10px; border:1px solid #e2e8f0; border-radius:4px; margin-bottom:10px; font-family:monospace; font-size:13px; overflow-x:auto;">${src}</div>`;
+        cell.outputs?.forEach(o => {
+           if(o.text) html += `<pre style="font-size:12px; color:#475569; margin:0 0 10px 10px; overflow-x:auto;">${(Array.isArray(o.text) ? o.text.join('') : o.text)}</pre>`;
+           if(o.data?.['image/png']) html += `<img src="data:image/png;base64,${(Array.isArray(o.data['image/png']) ? o.data['image/png'].join('') : o.data['image/png'])}" style="max-width:100%; margin:10px 0;" />`;
+        });
+      } else if (cell.cell_type === 'markdown') {
+        const src = (Array.isArray(cell.source) ? cell.source.join('') : cell.source);
+        html += `<div style="margin-bottom:10px; line-height:1.6;">${src.replace(/\n/g, '<br>')}</div>`;
+      }
+    });
+    return html + '</div>';
+  } catch(e) { return `<div style="color:red; padding:20px;">Error reading Notebook</div>`; }
+};
+
+// --- 5. MAIN VIEWER ---
+const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
+  const [zipContent, setZipContent] = useState(null);
+  const [selectedZipFile, setSelectedZipFile] = useState(null);
+  const [internalFileType, setInternalFileType] = useState('');
+  const [internalFileUrl, setInternalFileUrl] = useState(null);
+  const [internalFileContent, setInternalFileContent] = useState(null);
+  const [internalTableData, setInternalTableData] = useState(null); 
+  const [internalBackendData, setInternalBackendData] = useState(null);
+  const [internalLoading, setInternalLoading] = useState(false);
+
+  useEffect(() => {
+    if ((fileType === 'zip' || fileType === 'jar') && file) {
+      JSZip.loadAsync(file).then(setZipContent);
+    }
+  }, [file, fileType]);
+
+  const handleZipFileClick = async (path) => {
+    const zipObj = zipContent.files[path];
+    if (zipObj.dir) return;
+
+    setInternalLoading(true);
+    setInternalBackendData(null); setInternalTableData(null); setInternalFileContent(null);
+    setSelectedZipFile(path);
+
+    const ext = path.split('.').pop().toLowerCase();
+    setInternalFileType(ext);
+    const blob = await zipObj.async("blob");
+    const url = URL.createObjectURL(blob);
+    setInternalFileUrl(url);
+
+    try {
+      if (['xlsx', 'xls', 'csv'].includes(ext)) {
+         if (ext === 'csv') {
+            const txt = await blob.text();
+            setInternalTableData(txt.split(/\r?\n/).map(r => r.split(',')).filter(r => r.length > 1));
+         } else {
+            const ab = await blob.arrayBuffer();
+            const wb = XLSX.read(ab, { type: 'array' });
+            setInternalTableData(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 }));
+         }
+      } 
+      else if (['docx'].includes(ext)) {
+         const ab = await blob.arrayBuffer();
+         const res = await mammoth.convertToHtml({ arrayBuffer: ab });
+         setInternalBackendData({ type: 'html_doc', content: res.value });
+      }
+      else if (['ipynb'].includes(ext)) {
+         const html = await convertIpynbToHtml(blob);
+         setInternalBackendData({ type: 'html_doc', content: html });
+      }
+      else if (EXT_MAP.server_office.includes(ext)) {
+         const fd = new FormData();
+         fd.append('file', new File([blob], path, { type: blob.type }));
+         const res = await axios.post(`${API_URL}/detect-and-convert`, fd);
+         setInternalBackendData(res.data);
+      } 
+      else if (TEXT_EXTS.includes(ext)) {
+         setInternalFileContent(await zipObj.async("string"));
+      }
+    } catch (e) { 
+        console.error(e);
+        setInternalBackendData({ type: 'html_doc', content: '<div style="color:red;padding:20px;">Failed to load file.</div>' });
+    } finally {
+        setInternalLoading(false); 
+    }
+  };
+
+  const closeInternalFile = () => {
+    setSelectedZipFile(null);
+    setInternalFileUrl(null);
+    setInternalFileContent(null);
+    setInternalBackendData(null);
+  };
+
+  const renderContent = (type, url, content, data, tableData, fileName) => {
+    // A. Tables
+    if (tableData) return <ZoomWrapper><PaginatedTable data={tableData} /></ZoomWrapper>;
+    
+    // B. Documents (Word, Notebooks)
+    if (data?.type === 'html_table' || data?.type === 'html_doc') {
+      // FIX: w-max and min-w-full enable horizontal scrolling for wide content
+      return <ZoomWrapper><div dangerouslySetInnerHTML={{ __html: data.content }} className="prose max-w-none bg-white shadow-sm p-4 w-max min-w-full min-h-full" /></ZoomWrapper>;
+    }
+
+    // C. Images
+    if (['png','jpg','jpeg','gif','bmp','webp'].includes(type) || data?.type === 'image_pass') {
+      return <ZoomWrapper><img src={url} className="max-w-full h-auto mx-auto my-4" /></ZoomWrapper>;
+    }
+
+    // D. PDF (Clean, White BG, Zoom Enabled)
+    if (type === 'pdf' || data?.type === 'pdf_pass') {
+       return (
+         <ZoomWrapper className="bg-white">
+             <div className="flex flex-col items-center min-h-screen pb-12">
+                <div className="w-full md:w-[800px] lg:w-[900px] max-w-full shadow-lg">
+                    <Suspense fallback={<LoadingSpinner />}><PdfRenderer url={url} /></Suspense>
+                </div>
+             </div>
+         </ZoomWrapper>
+       );
+    }
+
+    // E. Code (Horizontal Scroll Enabled, Full Screen)
+    if (content || ['js','py','java','html','css','json','sql','md','c','cpp'].includes(type)) {
+      return (
+        <div className="absolute inset-0 w-full h-full bg-[#1e1e1e]">
+           <Suspense fallback={<LoadingSpinner text="Loading Editor..." />}>
+             <Editor 
+               height="100%" 
+               width="100%" 
+               language={type==='js'?'javascript':type} 
+               value={content} 
+               theme="vs-dark" 
+               options={{ 
+                   readOnly: true, 
+                   minimap: { enabled: false }, 
+                   automaticLayout: true, 
+                   scrollBeyondLastLine: false, 
+                   wordWrap: 'off' // FIX: Enables horizontal scrolling for long code lines
+               }} 
+             />
+           </Suspense>
+        </div>
+      );
+    }
+
+    // F. Media
+    if (['mp4','webm'].includes(type)) return <div className="flex items-center justify-center h-full bg-black"><video controls src={url} className="max-w-full max-h-full" /></div>;
+    if (EXT_MAP.audio.includes(type)) return <div className="flex items-center justify-center h-60"><audio controls src={url} /></div>;
+    
+    // G. Fallback
+    return (
+      <div className="flex flex-col items-center justify-center h-full bg-gray-50 text-gray-600 p-6 text-center">
+        <FileQuestion className="w-12 h-12 text-gray-400 mb-4" />
+        <h2 className="text-xl font-semibold mb-2">Preview Unavailable</h2>
+        <a href={url} download={fileName} className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition"><Download className="w-5 h-5" /> Download File</a>
+      </div>
+    );
+  };
+
+  if (selectedZipFile) {
+    return (
+      <div className="flex flex-col h-full bg-gray-100 relative">
+        <div className="bg-white p-3 border-b flex items-center gap-3 shadow-sm z-20 shrink-0">
+          <button onClick={() => { setSelectedZipFile(null); setInternalFileUrl(null); }} className="flex items-center gap-1 text-sm font-semibold text-blue-600 hover:text-blue-800"><ArrowLeft size={18} /> Back</button>
+          <span className="text-gray-700 text-sm font-medium truncate flex-1">/ {selectedZipFile}</span>
+        </div>
+        <div className="flex-1 overflow-hidden relative w-full h-full">
+          {internalLoading ? <LoadingSpinner text="Opening..." /> : renderContent(internalFileType, internalFileUrl, internalFileContent, internalBackendData, internalTableData, selectedZipFile)}
+        </div>
+      </div>
+    );
+  }
+
+  if ((fileType === 'zip' || fileType === 'jar') && zipContent) return <ZipNavigator zipContent={zipContent} onFileClick={handleZipFileClick} />;
+  
+  return renderContent(fileType, file ? URL.createObjectURL(file) : null, fileContent, backendData, null, file?.name);
 };
 
 export default UniversalViewer;
