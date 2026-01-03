@@ -1,6 +1,5 @@
 import React, { useState, useEffect, Suspense, useRef, useMemo, useLayoutEffect } from "react";
 import JSZip from "jszip";
-// No axios needed - All local
 import * as XLSX from "xlsx"; 
 import mammoth from "mammoth";
 import { Loader2, Download, FileText, FolderOpen, ArrowLeft, FileQuestion, ChevronLeft, ChevronRight, FileCode, FileImage, Home, FileJson, FileTerminal, Database, Music, Video, Box } from "lucide-react";
@@ -18,95 +17,112 @@ const LoadingSpinner = ({ text }) => (
   </div>
 );
 
-// --- 1. FILE EXTENSION MAP ---
+// --- 1. EXTENSION MAP (Categorized for Icons & Editor) ---
 const EXT_MAP = {
-  // Code
-  c: 'c', cpp: 'cpp', cc: 'cpp', cxx: 'cpp', h: 'cpp', hpp: 'cpp',
+  // Text / Code
+  c: 'c', cpp: 'cpp', cc: 'cpp', h: 'cpp', hpp: 'cpp',
   java: 'java', class: 'java', 
-  py: 'python', pyc: 'python', pyd: 'python', pyo: 'python', pyw: 'python',
-  cs: 'csharp', csproj: 'xml', sln: 'text',
-  rs: 'rust', go: 'go',
-  html: 'html', htm: 'html', css: 'css', js: 'javascript', mjs: 'javascript', ts: 'typescript', tsx: 'typescript',
-  php: 'php', rb: 'ruby', jsx: 'javascript', vue: 'html', svelte: 'html',
-  sass: 'scss', scss: 'scss', less: 'less',
-  kt: 'kotlin', gradle: 'groovy', swift: 'swift', dart: 'dart',
-  json: 'json', yaml: 'yaml', yml: 'yaml', xml: 'xml', toml: 'ini', ini: 'ini', env: 'properties',
+  py: 'python', pyc: 'python', pyw: 'python',
+  js: 'javascript', jsx: 'javascript', ts: 'typescript', tsx: 'typescript', mjs: 'javascript',
+  html: 'html', htm: 'html', css: 'css', scss: 'scss', sass: 'scss', less: 'less',
+  json: 'json', xml: 'xml', yaml: 'yaml', yml: 'yaml', toml: 'ini', ini: 'ini', env: 'properties',
   sql: 'sql', md: 'markdown', tex: 'latex',
-  sh: 'shell', bash: 'shell', zsh: 'shell', bat: 'bat', ps1: 'powershell', dockerfile: 'dockerfile', makefile: 'makefile',
-  r: 'r', txt: 'plaintext', rtf: 'plaintext', log: 'plaintext', csv: 'csv',
+  sh: 'shell', bat: 'bat', ps1: 'powershell', dockerfile: 'dockerfile',
+  txt: 'plaintext', csv: 'csv', log: 'plaintext', rtf: 'plaintext',
 
-  // Local Libraries
+  // Binary / Complex
   office: ['docx', 'xlsx', 'xls', 'odt'], 
   notebook: ['ipynb'],
-  
-  // Media & Binary
-  image: ['jpg','jpeg','png','gif','bmp','tiff','webp','heic','svg','ico'],
-  video: ['mp4','mkv','avi','mov','wmv','flv','webm'],
-  audio: ['mp3','wav','aac','flac','ogg','m4a','wma'],
+  image: ['jpg','jpeg','png','gif','bmp','webp','svg','ico'],
+  video: ['mp4','mkv','avi','mov','webm'],
+  audio: ['mp3','wav','ogg','m4a'],
   model: ['stl','obj'],
-  pdf: ['pdf']
+  pdf: ['pdf'],
+  archive: ['zip', 'jar', '7z', 'rar', 'tar', 'gz']
 };
 
-// --- 2. LOCAL PROCESSING ENGINE (Unified) ---
-const processFileLocally = async (blob, ext) => {
-  try {
-    // A. Excel / CSV
-    if (['xlsx', 'xls', 'csv'].includes(ext)) {
-       if (ext === 'csv') {
-          const txt = await blob.text();
-          const rows = txt.split(/\r?\n/).map(r => r.split(',')).filter(r => r.length > 1);
-          return { type: 'table', content: rows };
-       } else {
-          const ab = await blob.arrayBuffer();
-          const wb = XLSX.read(ab, { type: 'array' });
-          const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
-          return { type: 'table', content: rows };
-       }
-    } 
-    // B. Word
-    else if (['docx', 'odt'].includes(ext)) {
-       const ab = await blob.arrayBuffer();
-       const res = await mammoth.convertToHtml({ arrayBuffer: ab });
-       return { type: 'html', content: res.value };
-    }
-    // C. Jupyter Notebook
-    else if (['ipynb'].includes(ext)) {
-       const text = await blob.text();
-       const json = JSON.parse(text);
-       let html = '<div style="padding: 20px; font-family: sans-serif; min-width: 100%; width: fit-content; box-sizing: border-box;">';
-       json.cells?.forEach(cell => {
-         if (cell.cell_type === 'code') {
-           const src = (Array.isArray(cell.source) ? cell.source.join('') : cell.source).trim();
-           if(src) html += `<div style="background:#f8fafc; padding:10px; border:1px solid #e2e8f0; border-radius:4px; margin-bottom:10px; font-family:monospace; font-size:13px; overflow-x:auto;">${src}</div>`;
-           cell.outputs?.forEach(o => {
-              if(o.text) html += `<pre style="font-size:12px; color:#475569; margin:0 0 10px 10px; overflow-x:auto;">${(Array.isArray(o.text) ? o.text.join('') : o.text)}</pre>`;
-              if(o.data?.['image/png']) html += `<img src="data:image/png;base64,${(Array.isArray(o.data['image/png']) ? o.data['image/png'].join('') : o.data['image/png'])}" style="max-width:100%; margin:10px 0;" />`;
-           });
-         } else if (cell.cell_type === 'markdown') {
-           const src = (Array.isArray(cell.source) ? cell.source.join('') : cell.source);
-           html += `<div style="margin-bottom:10px; line-height:1.6;">${src.replace(/\n/g, '<br>')}</div>`;
-         }
-       });
-       html += '</div>';
-       return { type: 'html', content: html };
-    }
-    // D. Text / Code (Based on Extension Map)
-    else {
-       const isCode = Object.keys(EXT_MAP).some(key => !['image','video','audio','model','pdf','office','notebook'].includes(key) && (key === ext || (Array.isArray(EXT_MAP[key]) && EXT_MAP[key].includes(ext))));
-       
-       if (isCode) {
-          const text = await blob.text();
-          return { type: 'text', content: text };
-       }
-       // Fallback: Check if file is readable text
-       const text = await blob.text();
-       if ((text.match(/\0/g)||[]).length < 5) return { type: 'text', content: text };
-    }
-  } catch (e) {
-    console.error("Processing Error:", e);
-    return { type: 'error' };
+// --- 2. UNIFIED FILE PROCESSOR (The Core Logic) ---
+// This function handles BOTH single files and files inside ZIPs
+const processFile = async (blob, ext) => {
+  const fileUrl = URL.createObjectURL(blob);
+
+  // 1. PDF (Native)
+  if (EXT_MAP.pdf.includes(ext)) {
+    return { type: 'pdf', url: fileUrl };
   }
-  return null; // Not processed locally (Binary/Media)
+
+  // 2. Images (Native)
+  if (EXT_MAP.image.includes(ext)) {
+    return { type: 'image', url: fileUrl };
+  }
+
+  // 3. Video/Audio (Native)
+  if (EXT_MAP.video.includes(ext)) return { type: 'video', url: fileUrl };
+  if (EXT_MAP.audio.includes(ext)) return { type: 'audio', url: fileUrl };
+  if (EXT_MAP.model.includes(ext)) return { type: 'model', url: fileUrl };
+
+  // 4. Excel / CSV (Local Parse)
+  if (['xlsx', 'xls', 'csv'].includes(ext)) {
+    try {
+      if (ext === 'csv') {
+        const text = await blob.text();
+        const rows = text.split(/\r?\n/).map(r => r.split(',')).filter(r => r.length > 1);
+        return { type: 'table', content: rows };
+      } else {
+        const arrayBuffer = await blob.arrayBuffer();
+        const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1 });
+        return { type: 'table', content: rows };
+      }
+    } catch (e) { return { type: 'error', message: 'Could not parse spreadsheet.' }; }
+  }
+
+  // 5. Word Documents (Local Parse)
+  if (['docx', 'odt'].includes(ext)) {
+    try {
+      const arrayBuffer = await blob.arrayBuffer();
+      const result = await mammoth.convertToHtml({ arrayBuffer });
+      return { type: 'html_doc', content: result.value };
+    } catch (e) { return { type: 'error', message: 'Could not parse document.' }; }
+  }
+
+  // 6. Jupyter Notebooks (Local Parse)
+  if (ext === 'ipynb') {
+    try {
+      const text = await blob.text();
+      const json = JSON.parse(text);
+      let html = '<div style="padding: 20px; font-family: sans-serif; min-width: 100%; width: fit-content;">';
+      json.cells?.forEach(cell => {
+        if (cell.cell_type === 'code') {
+          const src = (Array.isArray(cell.source) ? cell.source.join('') : cell.source).trim();
+          if(src) html += `<div style="background:#f8fafc; padding:10px; border:1px solid #e2e8f0; border-radius:4px; margin-bottom:10px; font-family:monospace; font-size:13px; overflow-x:auto;">${src}</div>`;
+          cell.outputs?.forEach(o => {
+             if(o.text) html += `<pre style="font-size:12px; color:#475569; margin:0 0 10px 10px; overflow-x:auto;">${(Array.isArray(o.text) ? o.text.join('') : o.text)}</pre>`;
+             if(o.data?.['image/png']) html += `<img src="data:image/png;base64,${(Array.isArray(o.data['image/png']) ? o.data['image/png'].join('') : o.data['image/png'])}" style="max-width:100%; margin:10px 0;" />`;
+          });
+        } else if (cell.cell_type === 'markdown') {
+          const src = (Array.isArray(cell.source) ? cell.source.join('') : cell.source);
+          html += `<div style="margin-bottom:10px; line-height:1.6;">${src.replace(/\n/g, '<br>')}</div>`;
+        }
+      });
+      html += '</div>';
+      return { type: 'html_doc', content: html };
+    } catch (e) { return { type: 'error', message: 'Invalid Notebook file.' }; }
+  }
+
+  // 7. Code / Text (Fallback)
+  // Check if extension is in our known text map OR try to read as text
+  try {
+    const text = await blob.text();
+    // Safety check: If file contains many null bytes, it's likely a binary we can't read (like .exe or .pptx)
+    if ((text.match(/\0/g)||[]).length > 10) {
+       return { type: 'download', url: fileUrl }; // Binary -> Force Download
+    }
+    return { type: 'text_content', content: text, ext: ext };
+  } catch (e) {
+    return { type: 'download', url: fileUrl };
+  }
 };
 
 // --- 3. ZIP NAVIGATOR ---
@@ -167,13 +183,12 @@ const ZipNavigator = ({ zipContent, onFileClick }) => {
           {files.map(file => {
              let Icon = FileText;
              const ext = file.name.split('.').pop().toLowerCase();
-             if (['png','jpg','jpeg','gif','bmp','svg','webp'].includes(ext)) Icon = FileImage;
-             else if (['js','py','java','c','cpp','html','css','json','ts','tsx','php'].includes(ext)) Icon = FileCode;
-             else if (['sh','bat','cmd','ps1'].includes(ext)) Icon = FileTerminal;
-             else if (['sql','db','sqlite'].includes(ext)) Icon = Database;
-             else if (['mp3','wav','ogg'].includes(ext)) Icon = Music;
-             else if (['mp4','mkv','mov'].includes(ext)) Icon = Video;
+             if (EXT_MAP.image.includes(ext)) Icon = FileImage;
+             else if (EXT_MAP.office.includes(ext) || EXT_MAP.notebook.includes(ext)) Icon = FileText;
+             else if (['mp3','wav'].includes(ext)) Icon = Music;
+             else if (['mp4','mkv'].includes(ext)) Icon = Video;
              else if (['stl','obj'].includes(ext)) Icon = Box;
+             else Icon = FileCode;
 
              return (
               <div key={file.name} onClick={() => onFileClick(file.fullPath)} className="flex items-center gap-3 p-3 rounded-lg hover:bg-blue-50 active:bg-blue-100 cursor-pointer border border-transparent hover:border-blue-200 transition min-w-[300px]">
@@ -202,7 +217,6 @@ const ZoomWrapper = ({ children, className = "" }) => {
     const updateZoom = (newScale, centerX, centerY) => {
         const content = contentRef.current;
         if (!content) return;
-
         const oldScale = state.current.scale;
         const ratio = newScale / oldScale;
         const rect = container.getBoundingClientRect();
@@ -270,9 +284,7 @@ const ZoomWrapper = ({ children, className = "" }) => {
 
   return (
     <div ref={containerRef} className={`relative w-full h-full overflow-auto bg-gray-50 touch-pan-x touch-pan-y ${className}`}>
-      <div ref={contentRef} className="origin-top-left will-change-transform min-h-full" style={{ width: '100%', transition: 'transform 0.05s linear' }}>
-        {children}
-      </div>
+      <div ref={contentRef} className="origin-top-left will-change-transform min-h-full" style={{ width: '100%', transition: 'transform 0.05s linear' }}>{children}</div>
     </div>
   );
 };
@@ -316,185 +328,110 @@ const PaginatedTable = ({ data }) => {
 const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
   const [zipContent, setZipContent] = useState(null);
   const [selectedZipFile, setSelectedZipFile] = useState(null);
-  const [internalFileType, setInternalFileType] = useState('');
-  const [internalFileUrl, setInternalFileUrl] = useState(null);
-  const [internalFileContent, setInternalFileContent] = useState(null);
-  const [internalTableData, setInternalTableData] = useState(null); 
-  const [internalBackendData, setInternalBackendData] = useState(null);
-  const [internalLoading, setInternalLoading] = useState(false);
+  const [viewState, setViewState] = useState(null); // { type, content, url, ext, name }
+  const [loading, setLoading] = useState(false);
 
-  // A. HANDLE SINGLE FILE UPLOAD (Auto-Process Locally)
+  // A. INITIAL LOAD (ZIP or SINGLE FILE)
   useEffect(() => {
-    const processSingleFile = async () => {
-      if (file && fileType !== 'zip' && fileType !== 'jar' && fileType !== '7z') {
-        setInternalLoading(true);
-        // Reset states
-        setInternalTableData(null); setInternalBackendData(null); setInternalFileContent(null);
-        
-        try {
-          const result = await processFileLocally(file, fileType);
-          if (result) {
-             if (result.type === 'table') setInternalTableData(result.content);
-             else if (result.type === 'html') setInternalBackendData({ type: 'html_doc', content: result.content });
-             else if (result.type === 'text') setInternalFileContent(result.content);
-          }
-        } catch (e) {
-          console.error(e);
-        } finally {
-          setInternalLoading(false);
+    const init = async () => {
+      if (!file) return;
+      
+      // 1. IS ZIP?
+      if (EXT_MAP.archive.includes(fileType)) {
+        if (fileType === 'zip' || fileType === 'jar') {
+           JSZip.loadAsync(file).then(setZipContent);
         }
+        return; // 7z, rar handled by render fallback
       }
+
+      // 2. SINGLE FILE -> PROCESS IMMEDIATELY
+      setLoading(true);
+      const result = await processFile(file, fileType);
+      setViewState({ ...result, name: file.name });
+      setLoading(false);
     };
-    processSingleFile();
+    init();
   }, [file, fileType]);
 
-  // B. HANDLE ZIP LOAD
-  useEffect(() => {
-    if ((fileType === 'zip' || fileType === 'jar') && file) {
-      JSZip.loadAsync(file).then(setZipContent);
-    }
-  }, [file, fileType]);
-
-  // C. HANDLE ZIP FILE CLICK
+  // B. HANDLE ZIP FILE CLICK
   const handleZipFileClick = async (path) => {
     const zipObj = zipContent.files[path];
     if (zipObj.dir) return;
 
-    setInternalLoading(true);
-    setInternalBackendData(null); setInternalTableData(null); setInternalFileContent(null);
+    setLoading(true);
     setSelectedZipFile(path);
-
-    const ext = path.split('.').pop().toLowerCase();
-    setInternalFileType(ext);
-    const blob = await zipObj.async("blob");
-    const url = URL.createObjectURL(blob);
-    setInternalFileUrl(url);
-
-    try {
-      const result = await processFileLocally(blob, ext);
-      if (result) {
-         if (result.type === 'table') setInternalTableData(result.content);
-         else if (result.type === 'html') setInternalBackendData({ type: 'html_doc', content: result.content });
-         else if (result.type === 'text') setInternalFileContent(result.content);
-      }
-    } catch (e) { 
-        console.error(e);
-        setInternalBackendData({ type: 'html_doc', content: '<div style="color:red;padding:20px;">Failed to load file.</div>' });
-    } finally {
-        setInternalLoading(false); 
-    }
-  };
-
-  const closeInternalFile = () => {
-    setSelectedZipFile(null);
-    setInternalFileUrl(null);
-    setInternalFileContent(null);
-    setInternalBackendData(null);
-    setInternalTableData(null);
-  };
-
-  // --- RENDER CONTENT SWITCH ---
-  const renderContent = (type, url, content, data, tableData, fileName) => {
-    // 1. Tables
-    if (tableData) return <ZoomWrapper><PaginatedTable data={tableData} /></ZoomWrapper>;
     
-    // 2. Documents (Word, Notebooks)
-    if (data?.type === 'html_table' || data?.type === 'html_doc') {
-      return <ZoomWrapper><div dangerouslySetInnerHTML={{ __html: data.content }} className="prose max-w-none bg-white shadow-sm p-4 w-max min-w-full min-h-full" /></ZoomWrapper>;
-    }
+    const ext = path.split('.').pop().toLowerCase();
+    const blob = await zipObj.async("blob");
+    const result = await processFile(blob, ext);
+    
+    setViewState({ ...result, name: path });
+    setLoading(false);
+  };
 
-    // 3. Images
-    if (EXT_MAP.image.includes(type) || data?.type === 'image_pass') {
-      return <ZoomWrapper><img src={url} className="max-w-full h-auto mx-auto my-4" /></ZoomWrapper>;
-    }
+  // --- RENDERER ---
+  const renderContent = () => {
+    if (!viewState) return null;
+    const { type, content, url, ext, name } = viewState;
 
-    // 4. PDF
-    if (type === 'pdf' || data?.type === 'pdf_pass') {
+    if (type === 'table') return <ZoomWrapper><PaginatedTable data={content} /></ZoomWrapper>;
+    if (type === 'html_doc') return <ZoomWrapper><div dangerouslySetInnerHTML={{ __html: content }} className="prose max-w-none bg-white shadow-sm p-4 w-max min-w-full min-h-full" /></ZoomWrapper>;
+    if (type === 'image') return <ZoomWrapper><img src={url} className="max-w-full h-auto mx-auto my-4" /></ZoomWrapper>;
+    if (type === 'pdf') return <ZoomWrapper className="bg-white"><div className="flex flex-col items-center min-h-screen pb-12"><div className="w-full md:w-[800px] lg:w-[900px] max-w-full shadow-lg"><Suspense fallback={<LoadingSpinner />}><PdfRenderer url={url} /></Suspense></div></div></ZoomWrapper>;
+    if (type === 'text_content') {
+       let lang = EXT_MAP[ext] || 'plaintext';
+       if(Array.isArray(lang)) lang = 'plaintext';
        return (
-         <ZoomWrapper className="bg-white">
-             <div className="flex flex-col items-center min-h-screen pb-12">
-                <div className="w-full md:w-[800px] lg:w-[900px] max-w-full shadow-lg">
-                    <Suspense fallback={<LoadingSpinner />}><PdfRenderer url={url} /></Suspense>
-                </div>
-             </div>
-         </ZoomWrapper>
-       );
-    }
-
-    // 5. Code
-    if (content) {
-      let lang = 'plaintext';
-      // Find language from EXT_MAP
-      const foundEntry = Object.entries(EXT_MAP).find(([k, v]) => 
-         (Array.isArray(v) && v.includes(type)) || k === type
-      );
-      if (foundEntry && typeof foundEntry[1] === 'string') lang = foundEntry[1];
-      if (['js','py','java','c','cpp','html','css','json','sql','xml'].includes(type)) lang = type === 'js' ? 'javascript' : type;
-
-      return (
         <div className="absolute inset-0 w-full h-full bg-[#1e1e1e]">
            <Suspense fallback={<LoadingSpinner text="Loading Editor..." />}>
-             <Editor 
-               height="100%" 
-               width="100%" 
-               language={lang} 
-               value={content} 
-               theme="vs-dark" 
-               options={{ 
-                   readOnly: true, 
-                   minimap: { enabled: false }, 
-                   automaticLayout: true, 
-                   scrollBeyondLastLine: false, 
-                   wordWrap: 'off' 
-               }} 
-             />
+             <Editor height="100%" width="100%" language={lang} value={content} theme="vs-dark" options={{ readOnly: true, minimap: { enabled: false }, automaticLayout: true, scrollBeyondLastLine: false, wordWrap: 'off' }} />
            </Suspense>
         </div>
-      );
+       );
     }
+    if (type === 'video') return <div className="flex items-center justify-center h-full bg-black"><video controls src={url} className="max-w-full max-h-full" /></div>;
+    if (type === 'audio') return <div className="flex items-center justify-center h-60"><audio controls src={url} /></div>;
+    if (type === 'model') return <div className="h-[500px] w-full"><Suspense fallback={<LoadingSpinner />}><ModelViewer url={url} /></Suspense></div>;
 
-    // 6. Media / Models
-    if (EXT_MAP.video.includes(type)) return <div className="flex items-center justify-center h-full bg-black"><video controls src={url} className="max-w-full max-h-full" /></div>;
-    if (EXT_MAP.audio.includes(type)) return <div className="flex items-center justify-center h-60"><audio controls src={url} /></div>;
-    if (EXT_MAP.model.includes(type)) return <div className="h-[500px] w-full"><Suspense fallback={<LoadingSpinner />}><ModelViewer url={url} /></Suspense></div>;
-    
-    // 7. Fallback
+    // Fallback / Download
     return (
       <div className="flex flex-col items-center justify-center h-full bg-gray-50 text-gray-600 p-6 text-center">
         <FileQuestion className="w-12 h-12 text-gray-400 mb-4" />
-        <h2 className="text-xl font-semibold mb-2">Preview Unavailable</h2>
-        <a href={url} download={fileName} className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition"><Download className="w-5 h-5" /> Download File</a>
+        <h2 className="text-xl font-semibold mb-2">Binary File Detected</h2>
+        <a href={url} download={name} className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition"><Download className="w-5 h-5" /> Download File</a>
       </div>
     );
   };
 
-  // --- RENDER LOGIC ---
+  // --- VIEW STATES ---
   
-  // A. VIEWING A FILE INSIDE A ZIP
-  if (selectedZipFile) {
+  // 1. LOADING
+  if (loading) return <LoadingSpinner />;
+
+  // 2. VIEWING FILE (Either Single or from Zip)
+  if (viewState) {
     return (
       <div className="flex flex-col h-full bg-gray-100 relative">
-        <div className="bg-white p-3 border-b flex items-center gap-3 shadow-sm z-20 shrink-0">
-          <button onClick={closeInternalFile} className="flex items-center gap-1 text-sm font-semibold text-blue-600 hover:text-blue-800"><ArrowLeft size={18} /> Back</button>
-          <span className="text-gray-700 text-sm font-medium truncate flex-1">/ {selectedZipFile}</span>
-        </div>
+        {selectedZipFile && (
+          <div className="bg-white p-3 border-b flex items-center gap-3 shadow-sm z-20 shrink-0">
+            <button onClick={() => { setViewState(null); setSelectedZipFile(null); }} className="flex items-center gap-1 text-sm font-semibold text-blue-600 hover:text-blue-800"><ArrowLeft size={18} /> Back</button>
+            <span className="text-gray-700 text-sm font-medium truncate flex-1">/ {selectedZipFile}</span>
+          </div>
+        )}
         <div className="flex-1 overflow-hidden relative w-full h-full">
-          {internalLoading ? <LoadingSpinner text="Opening..." /> : renderContent(internalFileType, internalFileUrl, internalFileContent, internalBackendData, internalTableData, selectedZipFile)}
+          {renderContent()}
         </div>
       </div>
     );
   }
 
-  // B. BROWSING A ZIP
-  if ((fileType === 'zip' || fileType === 'jar') && zipContent) return <ZipNavigator zipContent={zipContent} onFileClick={handleZipFileClick} />;
-  if (fileType === '7z') return <div className="flex flex-col items-center justify-center h-full text-center p-6 bg-gray-50"><FolderOpen className="w-16 h-16 text-yellow-600 mb-4" /><h2 className="text-xl font-bold mb-2">7-Zip Archive (.7z)</h2><p className="max-w-md text-gray-600 mb-6">Browsing .7z files directly is too heavy for browsers. Please download locally.</p><a href={file ? URL.createObjectURL(file) : "#"} download={file?.name} className="bg-yellow-600 text-white px-6 py-3 rounded-lg hover:bg-yellow-700 transition flex items-center gap-2"><Download size={20} /> Download .7z File</a></div>;
+  // 3. ZIP BROWSER
+  if (zipContent) return <ZipNavigator zipContent={zipContent} onFileClick={handleZipFileClick} />;
+  
+  // 4. UNSUPPORTED ARCHIVE (7z/Rar - Download Only)
+  if (fileType === '7z' || fileType === 'rar') return <div className="flex flex-col items-center justify-center h-full text-center p-6 bg-gray-50"><FolderOpen className="w-16 h-16 text-yellow-600 mb-4" /><h2 className="text-xl font-bold mb-2">Archive File</h2><a href={file ? URL.createObjectURL(file) : "#"} download={file?.name} className="bg-yellow-600 text-white px-6 py-3 rounded-lg hover:bg-yellow-700 transition flex items-center gap-2"><Download size={20} /> Download</a></div>;
 
-  // C. VIEWING A SINGLE UPLOADED FILE
-  return (
-    <div className="flex-1 w-full h-full relative overflow-hidden">
-       {internalLoading ? <LoadingSpinner text="Processing File..." /> : renderContent(fileType, file ? URL.createObjectURL(file) : null, internalFileContent || fileContent, internalBackendData || backendData, internalTableData, file?.name)}
-    </div>
-  );
+  return null;
 };
 
 export default UniversalViewer;
