@@ -223,31 +223,109 @@ const PaginatedTable = ({ data }) => {
   );
 };
 
-// --- 4. NOTEBOOK PARSER (Fixed: Correct Width Handling) ---
+// --- 4. NOTEBOOK PARSER (With Syntax Highlighting Fix) ---
 const convertIpynbToHtml = async (blob) => {
   try {
     const text = await blob.text();
     const json = JSON.parse(text);
-    // FIX: Removed 'width: fit-content' to allow text wrapping, added 'width: 100%'
-    let html = '<div style="padding: 20px; font-family: sans-serif; width: 100%; box-sizing: border-box;">';
-    json.cells?.forEach(cell => {
-      if (cell.cell_type === 'code') {
-        const src = (Array.isArray(cell.source) ? cell.source.join('') : cell.source).trim();
-        if(src) html += `<div style="background:#f8fafc; padding:10px; border:1px solid #e2e8f0; border-radius:4px; margin-bottom:10px; font-family:monospace; font-size:13px; overflow-x:auto;">${src}</div>`;
-        cell.outputs?.forEach(o => {
-           if(o.text) html += `<pre style="font-size:12px; color:#475569; margin:0 0 10px 10px; overflow-x:auto;">${(Array.isArray(o.text) ? o.text.join('') : o.text)}</pre>`;
-           if(o.data?.['image/png']) html += `<img src="data:image/png;base64,${(Array.isArray(o.data['image/png']) ? o.data['image/png'].join('') : o.data['image/png'])}" style="max-width:100%; margin:10px 0;" />`;
-        });
-      } else if (cell.cell_type === 'markdown') {
-        const src = (Array.isArray(cell.source) ? cell.source.join('') : cell.source);
-        html += `<div style="margin-bottom:10px; line-height:1.6;">${src.replace(/\n/g, '<br>')}</div>`;
-      }
-    });
-    return html + '</div>';
-  } catch(e) { return `<div style="color:red; padding:20px;">Error reading Notebook</div>`; }
+    
+    // --- Light Weight Syntax Highlighter Helper ---
+    const highlightCode = (code) => {
+      // 1. Escape HTML first to prevent injection and messing up tags
+      let html = code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      
+      // 2. Syntax Highlighting Rules (Applied via Regex)
+      // Comments (Gray)
+      html = html.replace(/(#.*)/g, '<span style="color:#6a737d;font-style:italic;">$1</span>');
+      // Strings (Dark Blue/Green)
+      html = html.replace(/(['"])(?:(?=(\\?))\2.)*?\1/g, '<span style="color:#032f62;">$&</span>');
+      // Keywords (Red/Purple - like standard Jupyter/GitHub)
+      html = html.replace(/\b(def|class|import|from|return|if|else|elif|for|while|try|except|finally|with|as|pass|break|continue|print|in|is|not|and|or|True|False|None)\b/g, '<span style="color:#d73a49;font-weight:bold;">$1</span>');
+      // Numbers (Blue)
+      html = html.replace(/\b(\d+)\b/g, '<span style="color:#005cc5;">$1</span>');
+      
+      return html;
+    };
+
+    // Use fit-content to allow horizontal scrolling
+    let html = '<div style="padding: 20px; font-family: -apple-system, BlinkMacSystemFont, sans-serif; min-width: 100%; width: fit-content; box-sizing: border-box;">';
+    
+    if (json.cells) {
+      json.cells.forEach((cell) => {
+        if (cell.cell_type === 'code') {
+           const source = Array.isArray(cell.source) ? cell.source.join('') : cell.source;
+           if (source && source.trim()) {
+             // Apply highlighting
+             const highlightedSource = highlightCode(source);
+             html += `
+               <div style="margin-bottom: 16px; border: 1px solid #e1e4e8; border-radius: 6px; overflow: hidden; background-color: #f6f8fa;">
+                 <div style="padding: 8px 12px; border-bottom: 1px solid #e1e4e8; font-size: 11px; color: #586069; font-family: monospace; background-color: #f6f8fa;">
+                   In [${cell.execution_count || ' '}]:
+                 </div>
+                 <div style="background: #ffffff; padding: 12px; overflow-x: auto;">
+                   <pre style="margin: 0; font-size: 13px; line-height: 1.45; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; color: #24292e;">${highlightedSource}</pre>
+                 </div>
+               </div>`;
+           }
+        } 
+        else if (cell.cell_type === 'markdown') {
+           const source = Array.isArray(cell.source) ? cell.source.join('') : cell.source;
+           let formatted = source
+              .replace(/### (.*)/g, '<h3 style="font-weight:600; font-size:1.1em; margin:16px 0 8px;">$1</h3>')
+              .replace(/## (.*)/g, '<h2 style="font-weight:600; font-size:1.25em; margin:20px 0 10px; border-bottom:1px solid #eee;">$1</h2>')
+              .replace(/# (.*)/g, '<h1 style="font-weight:700; font-size:1.5em; margin:24px 0 12px; border-bottom:1px solid #eee;">$1</h1>')
+              .replace(/\*\*(.*)\*\*/g, '<b>$1</b>')
+              .replace(/`([^`]*)`/g, '<code style="background:#f1f5f9; padding:2px 4px; borderRadius:4px; font-family:monospace; color:#d946ef;">$1</code>')
+              .replace(/\n/g, '<br>');
+           html += `<div style="padding: 4px 8px; color: #24292e; line-height: 1.6;">${formatted}</div>`;
+        }
+  
+        if (cell.outputs) {
+           cell.outputs.forEach(out => {
+             if (out.text) {
+               const txt = Array.isArray(out.text) ? out.text.join('') : out.text;
+               html += `<div style="margin-left: 4px; margin-bottom: 12px; font-size: 12px; font-family: monospace; color: #24292e; white-space: pre-wrap; overflow-x: auto;">${txt}</div>`;
+             }
+             if (out.data) {
+               if (out.data['text/plain'] && !out.data['image/png']) {
+                  const txt = Array.isArray(out.data['text/plain']) ? out.data['text/plain'].join('') : out.data['text/plain'];
+                  html += `<div style="margin-left: 4px; margin-bottom: 12px; font-size: 12px; font-family: monospace; color: #24292e; white-space: pre-wrap; overflow-x: auto;">${txt}</div>`;
+               }
+               if (out.data['image/png']) {
+                 const imgData = Array.isArray(out.data['image/png']) ? out.data['image/png'].join('') : out.data['image/png'];
+                 html += `<div style="margin: 12px 0;"><img src="data:image/png;base64,${imgData}" style="max-width: 100%; height: auto; border-radius: 4px;" /></div>`;
+               }
+             }
+           });
+        }
+      });
+    }
+    html += '</div>';
+    return html;
+  } catch (e) {
+    return `<div style="padding:20px; color:red;">Error parsing Notebook: ${e.message}</div>`;
+  }
 };
 
-// --- 5. MAIN VIEWER ---
+// --- 5. EXTENSION MAPS ---
+const EXT_MAP = {
+  code: ['c','cpp','cc','cxx','h','hpp','hh','hxx', 'java','class','jar', 'py','pyc','pyd','pyo','pyw', 'cs','csproj','sln', 'rs', 'go'],
+  web: ['html','htm','css','js','mjs', 'ts','tsx', 'php','php3','php4','phtml','rb', 'jsx','vue','svelte','erb', 'sass','scss','less','styl'],
+  mobile: ['kt','xml','gradle', 'swift','m', 'dart'],
+  data: ['json','yaml','yml','toml','ini','cfg','conf','env', 'sql','db','sqlite','psql', 'md','tex','rst'],
+  script: ['sh','bash','zsh', 'bat','cmd','ps1','vbs', 'dockerfile','makefile','cmake','vagrantfile'],
+  niche: ['hs','scala','erl','ex','exs','clj', 'v','r','jl', 'txt','rtf','log'],
+  local_office: ['docx', 'xlsx', 'xls', 'csv', 'odt', 'ipynb'], 
+  server_office: ['pptx','ppt','ppsx', 'odp', 'epub', 'parquet', 'doc'], 
+  image: ['jpg','jpeg','png','gif','bmp','tiff','webp','heic','svg','ico'],
+  video: ['mp4','mkv','avi','mov','wmv','flv','webm'],
+  audio: ['mp3','wav','aac','flac','ogg','m4a','wma'],
+  model: ['stl','obj'],
+  pdf: ['pdf']
+};
+
+const TEXT_EXTS = [...EXT_MAP.code, ...EXT_MAP.web, ...EXT_MAP.mobile, ...EXT_MAP.data, ...EXT_MAP.script, ...EXT_MAP.niche];
+
 const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
   const [zipContent, setZipContent] = useState(null);
   const [selectedZipFile, setSelectedZipFile] = useState(null);
@@ -260,59 +338,66 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
 
   useEffect(() => {
     if ((fileType === 'zip' || fileType === 'jar') && file) {
-      JSZip.loadAsync(file).then(setZipContent);
+      JSZip.loadAsync(file).then((zip) => setZipContent(zip));
     }
   }, [file, fileType]);
 
-  const handleZipFileClick = async (path) => {
-    const zipObj = zipContent.files[path];
+  const handleZipFileClick = async (relativePath) => {
+    if (!zipContent) return;
+    const zipObj = zipContent.files[relativePath];
     if (zipObj.dir) return;
 
     setInternalLoading(true);
-    setInternalBackendData(null); setInternalTableData(null); setInternalFileContent(null);
-    setSelectedZipFile(path);
+    setInternalBackendData(null);
+    setInternalTableData(null); 
+    setInternalFileContent(null);
+    setSelectedZipFile(relativePath);
 
-    const ext = path.split('.').pop().toLowerCase();
+    const ext = relativePath.split('.').pop().toLowerCase();
     setInternalFileType(ext);
+    
     const blob = await zipObj.async("blob");
     const url = URL.createObjectURL(blob);
     setInternalFileUrl(url);
 
     try {
-      if (['xlsx', 'xls', 'csv'].includes(ext)) {
-         if (ext === 'csv') {
-            const txt = await blob.text();
-            setInternalTableData(txt.split(/\r?\n/).map(r => r.split(',')).filter(r => r.length > 1));
-         } else {
-            const ab = await blob.arrayBuffer();
-            const wb = XLSX.read(ab, { type: 'array' });
-            setInternalTableData(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 }));
-         }
+      if (ext === 'ipynb') {
+        const html = await convertIpynbToHtml(blob);
+        setInternalBackendData({ type: 'html_doc', content: html });
+      }
+      else if (ext === 'pdf') { /* Native Render */ }
+      else if (['xlsx', 'xls'].includes(ext)) {
+        const arrayBuffer = await blob.arrayBuffer();
+        const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+        const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
+        setInternalTableData(rows);
+      }
+      else if (ext === 'csv') {
+        const text = await blob.text();
+        const rows = text.split(/\r?\n/).map(row => row.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim()));
+        setInternalTableData(rows.filter(r => r.length > 0));
+      }
+      else if (ext === 'docx') {
+        const arrayBuffer = await blob.arrayBuffer();
+        const result = await mammoth.convertToHtml({ arrayBuffer });
+        setInternalBackendData({ type: 'html_doc', content: result.value });
+      }
+      else if (EXT_MAP.server_office.includes(ext)) {
+        const formData = new FormData();
+        const virtualFile = new File([blob], relativePath, { type: blob.type });
+        formData.append('file', virtualFile);
+        const res = await axios.post(`${API_URL}/detect-and-convert`, formData);
+        setInternalBackendData(res.data);
       } 
-      else if (['docx'].includes(ext)) {
-         const ab = await blob.arrayBuffer();
-         const res = await mammoth.convertToHtml({ arrayBuffer: ab });
-         setInternalBackendData({ type: 'html_doc', content: res.value });
+      else if (TEXT_EXTS.includes(ext)) {
+        const text = await zipObj.async("string");
+        setInternalFileContent(text);
       }
-      else if (['ipynb'].includes(ext)) {
-         const html = await convertIpynbToHtml(blob);
-         setInternalBackendData({ type: 'html_doc', content: html });
-      }
-      else if (['pptx','ppt','doc'].includes(ext)) {
-         const fd = new FormData();
-         fd.append('file', new File([blob], path, { type: blob.type }));
-         const res = await axios.post(`${API_URL}/detect-and-convert`, fd);
-         setInternalBackendData(res.data);
-      } 
-      else if (['js','py','java','c','cpp','html','css','json','md','txt','sql','xml'].includes(ext)) {
-         setInternalFileContent(await zipObj.async("string"));
-      }
-    } catch (e) { 
-        console.error(e);
-        setInternalBackendData({ type: 'html_doc', content: '<div style="color:red;padding:20px;">Failed to load file.</div>' });
-    } finally {
-        setInternalLoading(false); 
+    } catch (e) {
+      console.error("Local conversion failed", e);
     }
+    
+    setInternalLoading(false);
   };
 
   const closeInternalFile = () => {
@@ -320,29 +405,33 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     setInternalFileUrl(null);
     setInternalFileContent(null);
     setInternalBackendData(null);
+    setInternalTableData(null);
   };
 
   const renderContent = (type, url, content, data, tableData, fileName) => {
-    // A. Tables
-    if (tableData) return <ZoomWrapper><PaginatedTable data={tableData} /></ZoomWrapper>;
     
-    // B. Documents (Word, Notebooks)
+    // A. TABLE DATA (Zoom Enabled)
+    if (tableData) {
+       return <ZoomWrapper><PaginatedTable data={tableData} fileName={fileName} /></ZoomWrapper>;
+    }
+    // B. HTML DOCUMENTS (Zoom Enabled)
     if (data?.type === 'html_table' || data?.type === 'html_doc') {
-      // FIX: Removed ZoomWrapper for Docs to fix "zoomed in" look and allow native scrolling
-      // Using standard div with overflow-auto
       return (
-        <div className="h-full w-full overflow-auto bg-white p-4">
-           <div dangerouslySetInnerHTML={{ __html: data.content }} className="prose max-w-none w-full" />
-        </div>
+        <ZoomWrapper>
+           <div dangerouslySetInnerHTML={{ __html: data.content }} className="prose max-w-none bg-white shadow-sm p-4 w-max min-w-full min-h-full" />
+        </ZoomWrapper>
+      );
+    }
+    // C. IMAGES (Zoom Enabled)
+    if (EXT_MAP.image.includes(type) || data?.type === 'image_pass') {
+      return (
+        <ZoomWrapper>
+          <img src={url} className="max-w-full h-auto mx-auto my-4" />
+        </ZoomWrapper>
       );
     }
 
-    // C. Images
-    if (['png','jpg','jpeg','gif','bmp','webp'].includes(type) || data?.type === 'image_pass') {
-      return <ZoomWrapper><img src={url} className="max-w-full h-auto mx-auto my-4" /></ZoomWrapper>;
-    }
-
-    // D. PDF
+    // D. PDF (Zoom Wrapper Enabled + White BG to fix black box)
     if (type === 'pdf' || data?.type === 'pdf_pass') {
        return (
          <ZoomWrapper className="bg-white">
@@ -355,16 +444,18 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
        );
     }
 
-    // E. Code (Horizontal Scroll Enabled, Full Screen)
-    if (content || ['js','py','java','html','css','json','sql','md','c','cpp'].includes(type)) {
+    // E. CODE (Native Zoom - No ZoomWrapper to prevent layout break)
+    if (content || data?.type === 'text_content') {
+      const displayContent = data?.type === 'text_content' ? data.content : content;
+      const getLanguage = (e) => ({ js:'javascript', py:'python', java:'java', html:'html', css:'css', json:'json', sql:'sql', md:'markdown' }[e] || "plaintext");
       return (
         <div className="absolute inset-0 w-full h-full bg-[#1e1e1e]">
            <Suspense fallback={<LoadingSpinner text="Loading Editor..." />}>
              <Editor 
                height="100%" 
                width="100%" 
-               language={type==='js'?'javascript':type} 
-               value={content} 
+               language={getLanguage(type)} 
+               value={displayContent} 
                theme="vs-dark" 
                options={{ 
                    readOnly: true, 
@@ -378,12 +469,13 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
         </div>
       );
     }
-
-    // F. Media
-    if (['mp4','webm'].includes(type)) return <div className="flex items-center justify-center h-full bg-black"><video controls src={url} className="max-w-full max-h-full" /></div>;
-    if (['mp3','wav','aac'].includes(type)) return <div className="flex items-center justify-center h-60"><audio controls src={url} /></div>;
     
-    // G. Fallback
+    // F. MODELS/MEDIA
+    if (EXT_MAP.model.includes(type)) return <div className="h-[500px] w-full"><Suspense fallback={<LoadingSpinner />}><ModelViewer url={url} /></Suspense></div>;
+    if (EXT_MAP.video.includes(type)) return <div className="flex items-center justify-center h-full bg-black"><video controls src={url} className="max-w-full max-h-full" /></div>;
+    if (EXT_MAP.audio.includes(type)) return <div className="flex items-center justify-center h-60"><audio controls src={url} /></div>;
+
+    // G. FALLBACK
     return (
       <div className="flex flex-col items-center justify-center h-full bg-gray-50 text-gray-600 p-6 text-center">
         <FileQuestion className="w-12 h-12 text-gray-400 mb-4" />
@@ -393,6 +485,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     );
   };
 
+  // --- INTERNAL ZIP VIEW ---
   if (selectedZipFile) {
     return (
       <div className="flex flex-col h-full bg-gray-100 relative">
@@ -407,8 +500,13 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     );
   }
 
-  if ((fileType === 'zip' || fileType === 'jar') && zipContent) return <ZipNavigator zipContent={zipContent} onFileClick={handleZipFileClick} />;
-  
+  // --- ZIP FILE NAVIGATOR (Folder View) ---
+  if ((fileType === 'zip' || fileType === 'jar') && zipContent) {
+    return <ZipNavigator zipContent={zipContent} onFileClick={handleZipFileClick} />;
+  }
+
+  if (fileType === '7z') return <div className="flex flex-col items-center justify-center h-full text-center p-6 bg-gray-50"><FolderOpen className="w-16 h-16 text-yellow-600 mb-4" /><h2 className="text-xl font-bold mb-2">7-Zip Archive (.7z)</h2><p className="max-w-md text-gray-600 mb-6">Browsing .7z files directly is too heavy for browsers. Please download locally.</p><a href={file ? URL.createObjectURL(file) : "#"} download={file?.name} className="bg-yellow-600 text-white px-6 py-3 rounded-lg hover:bg-yellow-700 transition flex items-center gap-2"><Download size={20} /> Download .7z File</a></div>;
+
   return renderContent(fileType, file ? URL.createObjectURL(file) : null, fileContent, backendData, null, file?.name);
 };
 
