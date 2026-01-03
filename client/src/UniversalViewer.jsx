@@ -223,13 +223,13 @@ const PaginatedTable = ({ data }) => {
   );
 };
 
-// --- 4. NOTEBOOK PARSER (Horizontal Scroll Optimized) ---
+// --- 4. NOTEBOOK PARSER (Fixed: Correct Width Handling) ---
 const convertIpynbToHtml = async (blob) => {
   try {
     const text = await blob.text();
     const json = JSON.parse(text);
-    // FIX: 'width: fit-content' ensures container expands for wide code blocks
-    let html = '<div style="padding: 20px; font-family: sans-serif; min-width: 100%; width: fit-content; box-sizing: border-box;">';
+    // FIX: Removed 'width: fit-content' to allow text wrapping, added 'width: 100%'
+    let html = '<div style="padding: 20px; font-family: sans-serif; width: 100%; box-sizing: border-box;">';
     json.cells?.forEach(cell => {
       if (cell.cell_type === 'code') {
         const src = (Array.isArray(cell.source) ? cell.source.join('') : cell.source).trim();
@@ -298,13 +298,13 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
          const html = await convertIpynbToHtml(blob);
          setInternalBackendData({ type: 'html_doc', content: html });
       }
-      else if (EXT_MAP.server_office.includes(ext)) {
+      else if (['pptx','ppt','doc'].includes(ext)) {
          const fd = new FormData();
          fd.append('file', new File([blob], path, { type: blob.type }));
          const res = await axios.post(`${API_URL}/detect-and-convert`, fd);
          setInternalBackendData(res.data);
       } 
-      else if (TEXT_EXTS.includes(ext)) {
+      else if (['js','py','java','c','cpp','html','css','json','md','txt','sql','xml'].includes(ext)) {
          setInternalFileContent(await zipObj.async("string"));
       }
     } catch (e) { 
@@ -328,16 +328,21 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     
     // B. Documents (Word, Notebooks)
     if (data?.type === 'html_table' || data?.type === 'html_doc') {
-      // FIX: w-max and min-w-full enable horizontal scrolling for wide content
-      return <ZoomWrapper><div dangerouslySetInnerHTML={{ __html: data.content }} className="prose max-w-none bg-white shadow-sm p-4 w-max min-w-full min-h-full" /></ZoomWrapper>;
+      // FIX: Removed ZoomWrapper for Docs to fix "zoomed in" look and allow native scrolling
+      // Using standard div with overflow-auto
+      return (
+        <div className="h-full w-full overflow-auto bg-white p-4">
+           <div dangerouslySetInnerHTML={{ __html: data.content }} className="prose max-w-none w-full" />
+        </div>
+      );
     }
 
     // C. Images
-    if (EXT_MAP.image.includes(type) || data?.type === 'image_pass') {
+    if (['png','jpg','jpeg','gif','bmp','webp'].includes(type) || data?.type === 'image_pass') {
       return <ZoomWrapper><img src={url} className="max-w-full h-auto mx-auto my-4" /></ZoomWrapper>;
     }
 
-    // D. PDF (Clean, White BG, Zoom Enabled)
+    // D. PDF
     if (type === 'pdf' || data?.type === 'pdf_pass') {
        return (
          <ZoomWrapper className="bg-white">
@@ -376,7 +381,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
 
     // F. Media
     if (['mp4','webm'].includes(type)) return <div className="flex items-center justify-center h-full bg-black"><video controls src={url} className="max-w-full max-h-full" /></div>;
-    if (EXT_MAP.audio.includes(type)) return <div className="flex items-center justify-center h-60"><audio controls src={url} /></div>;
+    if (['mp3','wav','aac'].includes(type)) return <div className="flex items-center justify-center h-60"><audio controls src={url} /></div>;
     
     // G. Fallback
     return (
@@ -406,24 +411,5 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
   
   return renderContent(fileType, file ? URL.createObjectURL(file) : null, fileContent, backendData, null, file?.name);
 };
-
-// --- EXTENSION MAPS ---
-const EXT_MAP = {
-  code: ['c','cpp','cc','cxx','h','hpp','hh','hxx', 'java','class','jar', 'py','pyc','pyd','pyo','pyw', 'cs','csproj','sln', 'rs', 'go'],
-  web: ['html','htm','css','js','mjs', 'ts','tsx', 'php','php3','php4','phtml','rb', 'jsx','vue','svelte','erb', 'sass','scss','less','styl'],
-  mobile: ['kt','xml','gradle', 'swift','m', 'dart'],
-  data: ['json','yaml','yml','toml','ini','cfg','conf','env', 'sql','db','sqlite','psql', 'md','tex','rst'],
-  script: ['sh','bash','zsh', 'bat','cmd','ps1','vbs', 'dockerfile','makefile','cmake','vagrantfile'],
-  niche: ['hs','scala','erl','ex','exs','clj', 'v','r','jl', 'txt','rtf','log'],
-  local_office: ['docx', 'xlsx', 'xls', 'csv', 'odt', 'ipynb'], 
-  server_office: ['pptx','ppt','ppsx', 'odp', 'epub', 'parquet', 'doc'], 
-  image: ['jpg','jpeg','png','gif','bmp','tiff','webp','heic','svg','ico'],
-  video: ['mp4','mkv','avi','mov','wmv','flv','webm'],
-  audio: ['mp3','wav','aac','flac','ogg','m4a','wma'],
-  model: ['stl','obj'],
-  pdf: ['pdf']
-};
-
-const TEXT_EXTS = [...EXT_MAP.code, ...EXT_MAP.web, ...EXT_MAP.mobile, ...EXT_MAP.data, ...EXT_MAP.script, ...EXT_MAP.niche];
 
 export default UniversalViewer;
