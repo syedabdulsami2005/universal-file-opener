@@ -3,6 +3,8 @@ import JSZip from "jszip";
 import axios from "axios";
 import * as XLSX from "xlsx"; 
 import mammoth from "mammoth";
+import hljs from "highlight.js"; // Import Highlight.js for Notebooks
+import "highlight.js/styles/github.css"; // Import standard styling
 import { Loader2, Download, FileText, FolderOpen, ArrowLeft, FileQuestion, ChevronLeft, ChevronRight, FileCode, FileImage, Home } from "lucide-react";
 
 // Lazy Load Components
@@ -98,7 +100,7 @@ const ZipNavigator = ({ zipContent, onFileClick }) => {
   );
 };
 
-// --- 2. PRECISE ZOOM WRAPPER (Universal Horizontal Scroll Support) ---
+// --- 2. PRECISE ZOOM WRAPPER ---
 const ZoomWrapper = ({ children, className = "" }) => {
   const containerRef = useRef(null);
   const contentRef = useRef(null);
@@ -223,53 +225,42 @@ const PaginatedTable = ({ data }) => {
   );
 };
 
-// --- 4. NOTEBOOK PARSER (With Syntax Highlighting Fix) ---
+// --- 4. NOTEBOOK PARSER (With Highlight.js for Correct Colors) ---
 const convertIpynbToHtml = async (blob) => {
   try {
     const text = await blob.text();
     const json = JSON.parse(text);
     
-    // --- Light Weight Syntax Highlighter Helper ---
-    const highlightCode = (code) => {
-      // 1. Escape HTML first to prevent injection and messing up tags
-      let html = code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      
-      // 2. Syntax Highlighting Rules (Applied via Regex)
-      // Comments (Gray)
-      html = html.replace(/(#.*)/g, '<span style="color:#6a737d;font-style:italic;">$1</span>');
-      // Strings (Dark Blue/Green)
-      html = html.replace(/(['"])(?:(?=(\\?))\2.)*?\1/g, '<span style="color:#032f62;">$&</span>');
-      // Keywords (Red/Purple - like standard Jupyter/GitHub)
-      html = html.replace(/\b(def|class|import|from|return|if|else|elif|for|while|try|except|finally|with|as|pass|break|continue|print|in|is|not|and|or|True|False|None)\b/g, '<span style="color:#d73a49;font-weight:bold;">$1</span>');
-      // Numbers (Blue)
-      html = html.replace(/\b(\d+)\b/g, '<span style="color:#005cc5;">$1</span>');
-      
-      return html;
-    };
-
-    // Use fit-content to allow horizontal scrolling
-    let html = '<div style="padding: 20px; font-family: -apple-system, BlinkMacSystemFont, sans-serif; min-width: 100%; width: fit-content; box-sizing: border-box;">';
+    // FIX: Using fit-content for horizontal scrolling
+    let html = '<div style="padding: 20px; font-family: -apple-system, system-ui, sans-serif; min-width: 100%; width: fit-content; box-sizing: border-box;">';
     
     if (json.cells) {
       json.cells.forEach((cell) => {
         if (cell.cell_type === 'code') {
            const source = Array.isArray(cell.source) ? cell.source.join('') : cell.source;
            if (source && source.trim()) {
-             // Apply highlighting
-             const highlightedSource = highlightCode(source);
+             // FIX: Using proper syntax highlighting library instead of raw Regex
+             let highlighted = source;
+             try {
+                // highlight.js auto-detects or uses python
+                if (hljs) highlighted = hljs.highlight(source, { language: 'python' }).value;
+             } catch(e) {
+                // Fallback escape if highlighter fails
+                highlighted = source.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+             }
+
              html += `
-               <div style="margin-bottom: 16px; border: 1px solid #e1e4e8; border-radius: 6px; overflow: hidden; background-color: #f6f8fa;">
-                 <div style="padding: 8px 12px; border-bottom: 1px solid #e1e4e8; font-size: 11px; color: #586069; font-family: monospace; background-color: #f6f8fa;">
-                   In [${cell.execution_count || ' '}]:
-                 </div>
+               <div style="margin-bottom: 12px; border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden;">
+                 <div style="background: #f8fafc; padding: 6px 12px; border-bottom: 1px solid #e5e7eb; font-size: 11px; color: #64748b; font-family: monospace;">In [${cell.execution_count || ' '}]:</div>
                  <div style="background: #ffffff; padding: 12px; overflow-x: auto;">
-                   <pre style="margin: 0; font-size: 13px; line-height: 1.45; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; color: #24292e;">${highlightedSource}</pre>
+                   <pre style="margin: 0; font-size: 13px; font-family: monospace; line-height: 1.5;">${highlighted}</pre>
                  </div>
                </div>`;
            }
         } 
         else if (cell.cell_type === 'markdown') {
            const source = Array.isArray(cell.source) ? cell.source.join('') : cell.source;
+           // Basic Markdown formatting
            let formatted = source
               .replace(/### (.*)/g, '<h3 style="font-weight:600; font-size:1.1em; margin:16px 0 8px;">$1</h3>')
               .replace(/## (.*)/g, '<h2 style="font-weight:600; font-size:1.25em; margin:20px 0 10px; border-bottom:1px solid #eee;">$1</h2>')
@@ -277,19 +268,19 @@ const convertIpynbToHtml = async (blob) => {
               .replace(/\*\*(.*)\*\*/g, '<b>$1</b>')
               .replace(/`([^`]*)`/g, '<code style="background:#f1f5f9; padding:2px 4px; borderRadius:4px; font-family:monospace; color:#d946ef;">$1</code>')
               .replace(/\n/g, '<br>');
-           html += `<div style="padding: 4px 8px; color: #24292e; line-height: 1.6;">${formatted}</div>`;
+           html += `<div style="padding: 4px 8px; color: #334155; line-height: 1.6;">${formatted}</div>`;
         }
   
         if (cell.outputs) {
            cell.outputs.forEach(out => {
              if (out.text) {
                const txt = Array.isArray(out.text) ? out.text.join('') : out.text;
-               html += `<div style="margin-left: 4px; margin-bottom: 12px; font-size: 12px; font-family: monospace; color: #24292e; white-space: pre-wrap; overflow-x: auto;">${txt}</div>`;
+               html += `<div style="margin-left: 4px; margin-bottom: 12px; font-size: 12px; font-family: monospace; color: #475569; white-space: pre-wrap; overflow-x: auto;">${txt}</div>`;
              }
              if (out.data) {
                if (out.data['text/plain'] && !out.data['image/png']) {
                   const txt = Array.isArray(out.data['text/plain']) ? out.data['text/plain'].join('') : out.data['text/plain'];
-                  html += `<div style="margin-left: 4px; margin-bottom: 12px; font-size: 12px; font-family: monospace; color: #24292e; white-space: pre-wrap; overflow-x: auto;">${txt}</div>`;
+                  html += `<div style="margin-left: 4px; margin-bottom: 12px; font-size: 12px; font-family: monospace; color: #475569; white-space: pre-wrap; overflow-x: auto;">${txt}</div>`;
                }
                if (out.data['image/png']) {
                  const imgData = Array.isArray(out.data['image/png']) ? out.data['image/png'].join('') : out.data['image/png'];
@@ -436,6 +427,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
        return (
          <ZoomWrapper className="bg-white">
              <div className="flex flex-col items-center min-h-screen pb-12">
+                {/* Removed pt-4 to fix top black gap */}
                 <div className="w-full md:w-[800px] lg:w-[900px] max-w-full shadow-lg">
                     <Suspense fallback={<LoadingSpinner />}><PdfRenderer url={url} /></Suspense>
                 </div>
@@ -449,7 +441,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
       const displayContent = data?.type === 'text_content' ? data.content : content;
       const getLanguage = (e) => ({ js:'javascript', py:'python', java:'java', html:'html', css:'css', json:'json', sql:'sql', md:'markdown' }[e] || "plaintext");
       return (
-        <div className="absolute inset-0 w-full h-full bg-[#1e1e1e]">
+        <div className="absolute inset-0 w-full h-full bg-[#1e1e1e]"> 
            <Suspense fallback={<LoadingSpinner text="Loading Editor..." />}>
              <Editor 
                height="100%" 
@@ -474,8 +466,8 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     if (EXT_MAP.model.includes(type)) return <div className="h-[500px] w-full"><Suspense fallback={<LoadingSpinner />}><ModelViewer url={url} /></Suspense></div>;
     if (EXT_MAP.video.includes(type)) return <div className="flex items-center justify-center h-full bg-black"><video controls src={url} className="max-w-full max-h-full" /></div>;
     if (EXT_MAP.audio.includes(type)) return <div className="flex items-center justify-center h-60"><audio controls src={url} /></div>;
-
-    // G. FALLBACK
+    
+    // G. Fallback
     return (
       <div className="flex flex-col items-center justify-center h-full bg-gray-50 text-gray-600 p-6 text-center">
         <FileQuestion className="w-12 h-12 text-gray-400 mb-4" />
@@ -485,12 +477,11 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     );
   };
 
-  // --- INTERNAL ZIP VIEW ---
   if (selectedZipFile) {
     return (
       <div className="flex flex-col h-full bg-gray-100 relative">
         <div className="bg-white p-3 border-b flex items-center gap-3 shadow-sm z-20 shrink-0">
-          <button onClick={closeInternalFile} className="flex items-center gap-1 text-sm font-semibold text-blue-600 hover:text-blue-800"><ArrowLeft size={18} /> Back</button>
+          <button onClick={closeInternalFile} className="flex items-center gap-1 text-sm font-semibold text-blue-600 hover:text-blue-800 transition"><ArrowLeft size={18} /> Back</button>
           <span className="text-gray-700 text-sm font-medium truncate flex-1">/ {selectedZipFile}</span>
         </div>
         <div className="flex-1 overflow-hidden relative w-full h-full">
@@ -500,13 +491,8 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     );
   }
 
-  // --- ZIP FILE NAVIGATOR (Folder View) ---
-  if ((fileType === 'zip' || fileType === 'jar') && zipContent) {
-    return <ZipNavigator zipContent={zipContent} onFileClick={handleZipFileClick} />;
-  }
-
-  if (fileType === '7z') return <div className="flex flex-col items-center justify-center h-full text-center p-6 bg-gray-50"><FolderOpen className="w-16 h-16 text-yellow-600 mb-4" /><h2 className="text-xl font-bold mb-2">7-Zip Archive (.7z)</h2><p className="max-w-md text-gray-600 mb-6">Browsing .7z files directly is too heavy for browsers. Please download locally.</p><a href={file ? URL.createObjectURL(file) : "#"} download={file?.name} className="bg-yellow-600 text-white px-6 py-3 rounded-lg hover:bg-yellow-700 transition flex items-center gap-2"><Download size={20} /> Download .7z File</a></div>;
-
+  if ((fileType === 'zip' || fileType === 'jar') && zipContent) return <ZipNavigator zipContent={zipContent} onFileClick={handleZipFileClick} />;
+  
   return renderContent(fileType, file ? URL.createObjectURL(file) : null, fileContent, backendData, null, file?.name);
 };
 
