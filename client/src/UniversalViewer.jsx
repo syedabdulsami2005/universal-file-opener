@@ -333,7 +333,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     }
 
     // C. Images
-    if (['png','jpg','jpeg','gif','bmp','webp'].includes(type) || data?.type === 'image_pass') {
+    if (EXT_MAP.image.includes(type) || data?.type === 'image_pass') {
       return <ZoomWrapper><img src={url} className="max-w-full h-auto mx-auto my-4" /></ZoomWrapper>;
     }
 
@@ -392,7 +392,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     return (
       <div className="flex flex-col h-full bg-gray-100 relative">
         <div className="bg-white p-3 border-b flex items-center gap-3 shadow-sm z-20 shrink-0">
-          <button onClick={() => { setSelectedZipFile(null); setInternalFileUrl(null); }} className="flex items-center gap-1 text-sm font-semibold text-blue-600 hover:text-blue-800"><ArrowLeft size={18} /> Back</button>
+          <button onClick={closeInternalFile} className="flex items-center gap-1 text-sm font-semibold text-blue-600 hover:text-blue-800"><ArrowLeft size={18} /> Back</button>
           <span className="text-gray-700 text-sm font-medium truncate flex-1">/ {selectedZipFile}</span>
         </div>
         <div className="flex-1 overflow-hidden relative w-full h-full">
@@ -406,5 +406,24 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
   
   return renderContent(fileType, file ? URL.createObjectURL(file) : null, fileContent, backendData, null, file?.name);
 };
+
+// --- EXTENSION MAPS ---
+const EXT_MAP = {
+  code: ['c','cpp','cc','cxx','h','hpp','hh','hxx', 'java','class','jar', 'py','pyc','pyd','pyo','pyw', 'cs','csproj','sln', 'rs', 'go'],
+  web: ['html','htm','css','js','mjs', 'ts','tsx', 'php','php3','php4','phtml','rb', 'jsx','vue','svelte','erb', 'sass','scss','less','styl'],
+  mobile: ['kt','xml','gradle', 'swift','m', 'dart'],
+  data: ['json','yaml','yml','toml','ini','cfg','conf','env', 'sql','db','sqlite','psql', 'md','tex','rst'],
+  script: ['sh','bash','zsh', 'bat','cmd','ps1','vbs', 'dockerfile','makefile','cmake','vagrantfile'],
+  niche: ['hs','scala','erl','ex','exs','clj', 'v','r','jl', 'txt','rtf','log'],
+  local_office: ['docx', 'xlsx', 'xls', 'csv', 'odt', 'ipynb'], 
+  server_office: ['pptx','ppt','ppsx', 'odp', 'epub', 'parquet', 'doc'], 
+  image: ['jpg','jpeg','png','gif','bmp','tiff','webp','heic','svg','ico'],
+  video: ['mp4','mkv','avi','mov','wmv','flv','webm'],
+  audio: ['mp3','wav','aac','flac','ogg','m4a','wma'],
+  model: ['stl','obj'],
+  pdf: ['pdf']
+};
+
+const TEXT_EXTS = [...EXT_MAP.code, ...EXT_MAP.web, ...EXT_MAP.mobile, ...EXT_MAP.data, ...EXT_MAP.script, ...EXT_MAP.niche];
 
 export default UniversalViewer;
