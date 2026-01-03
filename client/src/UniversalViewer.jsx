@@ -3,8 +3,8 @@ import JSZip from "jszip";
 import axios from "axios";
 import * as XLSX from "xlsx"; 
 import mammoth from "mammoth";
-import hljs from "highlight.js"; 
-import "highlight.js/styles/github.css"; 
+import hljs from "highlight.js"; // Import Highlight.js for Notebooks
+import "highlight.js/styles/github.css"; // Import standard styling
 import { Loader2, Download, FileText, FolderOpen, ArrowLeft, FileQuestion, ChevronLeft, ChevronRight, FileCode, FileImage, Home } from "lucide-react";
 
 // Lazy Load Components
@@ -22,7 +22,7 @@ const LoadingSpinner = ({ text }) => (
   </div>
 );
 
-// --- 1. SMART ZIP NAVIGATOR ---
+// --- 1. SMART ZIP NAVIGATOR (Horizontal Scroll Enabled) ---
 const ZipNavigator = ({ zipContent, onFileClick }) => {
   const [currentPath, setCurrentPath] = useState(""); 
 
@@ -58,6 +58,7 @@ const ZipNavigator = ({ zipContent, onFileClick }) => {
 
   return (
     <div className="flex flex-col h-full bg-white">
+      {/* Navigation Bar */}
       <div className="p-3 border-b bg-gray-50 flex items-center gap-2 shadow-sm shrink-0 overflow-x-auto whitespace-nowrap">
         {currentPath ? (
           <button onClick={goUp} className="flex items-center gap-1 text-sm font-bold text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-full transition bg-white border border-blue-100">
@@ -70,6 +71,7 @@ const ZipNavigator = ({ zipContent, onFileClick }) => {
         <span className="text-sm font-mono text-gray-700">{currentPath || "/"}</span>
       </div>
 
+      {/* File List (Horizontal Scroll Enabled) */}
       <div className="flex-1 overflow-auto p-2">
         <div className="flex flex-col gap-1 w-max min-w-full">
           {folders.map(folder => (
@@ -98,7 +100,7 @@ const ZipNavigator = ({ zipContent, onFileClick }) => {
   );
 };
 
-// --- 2. PRECISE ZOOM WRAPPER (Used for Images/Tables only) ---
+// --- 2. PRECISE ZOOM WRAPPER ---
 const ZoomWrapper = ({ children, className = "" }) => {
   const containerRef = useRef(null);
   const contentRef = useRef(null);
@@ -122,8 +124,9 @@ const ZoomWrapper = ({ children, className = "" }) => {
         const mouseY = centerY - rect.top;
 
         content.style.transform = `scale(${newScale})`;
+        // FIX: 'fit-content' allows the element to be wide naturally, enabling horizontal scroll
         content.style.width = newScale > 1 ? `${newScale * 100}%` : 'fit-content';
-        content.style.minWidth = '100%'; 
+        content.style.minWidth = '100%'; // Ensures it at least fills screen
         content.style.transformOrigin = "top left";
         state.current.scale = newScale;
 
@@ -222,23 +225,27 @@ const PaginatedTable = ({ data }) => {
   );
 };
 
-// --- 4. NOTEBOOK PARSER ---
+// --- 4. NOTEBOOK PARSER (With Highlight.js for Correct Colors) ---
 const convertIpynbToHtml = async (blob) => {
   try {
     const text = await blob.text();
     const json = JSON.parse(text);
     
-    let html = '<div style="padding: 20px; font-family: -apple-system, BlinkMacSystemFont, sans-serif; min-width: 100%; width: fit-content; box-sizing: border-box;">';
+    // FIX: Using fit-content for horizontal scrolling
+    let html = '<div style="padding: 20px; font-family: -apple-system, system-ui, sans-serif; min-width: 100%; width: fit-content; box-sizing: border-box;">';
     
     if (json.cells) {
       json.cells.forEach((cell) => {
         if (cell.cell_type === 'code') {
            const source = Array.isArray(cell.source) ? cell.source.join('') : cell.source;
            if (source && source.trim()) {
+             // FIX: Using proper syntax highlighting library instead of raw Regex
              let highlighted = source;
              try {
+                // highlight.js auto-detects or uses python
                 if (hljs) highlighted = hljs.highlight(source, { language: 'python' }).value;
              } catch(e) {
+                // Fallback escape if highlighter fails
                 highlighted = source.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
              }
 
@@ -253,6 +260,7 @@ const convertIpynbToHtml = async (blob) => {
         } 
         else if (cell.cell_type === 'markdown') {
            const source = Array.isArray(cell.source) ? cell.source.join('') : cell.source;
+           // Basic Markdown formatting
            let formatted = source
               .replace(/### (.*)/g, '<h3 style="font-weight:600; font-size:1.1em; margin:16px 0 8px;">$1</h3>')
               .replace(/## (.*)/g, '<h2 style="font-weight:600; font-size:1.25em; margin:20px 0 10px; border-bottom:1px solid #eee;">$1</h2>')
@@ -414,15 +422,17 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
       );
     }
 
-    // D. PDF (FIXED: NATIVE SCROLL, NO ZOOM WRAPPER)
+    // D. PDF (Zoom Wrapper Enabled + White BG to fix black box)
     if (type === 'pdf' || data?.type === 'pdf_pass') {
        return (
-         <div className="w-full h-full bg-gray-100 overflow-y-auto overflow-x-hidden flex flex-col items-center">
-             {/* Container: standard vertical scrolling list of pages */}
-             <div className="w-full md:max-w-4xl bg-white shadow-lg min-h-screen">
-                <Suspense fallback={<LoadingSpinner />}><PdfRenderer url={url} /></Suspense>
+         <ZoomWrapper className="bg-white">
+             <div className="flex flex-col items-center min-h-screen pb-12">
+                {/* Removed pt-4 to fix top black gap */}
+                <div className="w-full md:w-[800px] lg:w-[900px] max-w-full shadow-lg">
+                    <Suspense fallback={<LoadingSpinner />}><PdfRenderer url={url} /></Suspense>
+                </div>
              </div>
-         </div>
+         </ZoomWrapper>
        );
     }
 
@@ -431,7 +441,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
       const displayContent = data?.type === 'text_content' ? data.content : content;
       const getLanguage = (e) => ({ js:'javascript', py:'python', java:'java', html:'html', css:'css', json:'json', sql:'sql', md:'markdown' }[e] || "plaintext");
       return (
-        <div className="absolute inset-0 w-full h-full bg-[#1e1e1e]">
+        <div className="absolute inset-0 w-full h-full bg-[#1e1e1e]"> 
            <Suspense fallback={<LoadingSpinner text="Loading Editor..." />}>
              <Editor 
                height="100%" 
@@ -456,8 +466,8 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     if (EXT_MAP.model.includes(type)) return <div className="h-[500px] w-full"><Suspense fallback={<LoadingSpinner />}><ModelViewer url={url} /></Suspense></div>;
     if (EXT_MAP.video.includes(type)) return <div className="flex items-center justify-center h-full bg-black"><video controls src={url} className="max-w-full max-h-full" /></div>;
     if (EXT_MAP.audio.includes(type)) return <div className="flex items-center justify-center h-60"><audio controls src={url} /></div>;
-
-    // G. FALLBACK
+    
+    // G. Fallback
     return (
       <div className="flex flex-col items-center justify-center h-full bg-gray-50 text-gray-600 p-6 text-center">
         <FileQuestion className="w-12 h-12 text-gray-400 mb-4" />
@@ -467,12 +477,11 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     );
   };
 
-  // --- INTERNAL ZIP VIEW ---
   if (selectedZipFile) {
     return (
       <div className="flex flex-col h-full bg-gray-100 relative">
         <div className="bg-white p-3 border-b flex items-center gap-3 shadow-sm z-20 shrink-0">
-          <button onClick={closeInternalFile} className="flex items-center gap-1 text-sm font-semibold text-blue-600 hover:text-blue-800"><ArrowLeft size={18} /> Back</button>
+          <button onClick={closeInternalFile} className="flex items-center gap-1 text-sm font-semibold text-blue-600 hover:text-blue-800 transition"><ArrowLeft size={18} /> Back</button>
           <span className="text-gray-700 text-sm font-medium truncate flex-1">/ {selectedZipFile}</span>
         </div>
         <div className="flex-1 overflow-hidden relative w-full h-full">
@@ -482,13 +491,8 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     );
   }
 
-  // --- ZIP FILE NAVIGATOR (Folder View) ---
-  if ((fileType === 'zip' || fileType === 'jar') && zipContent) {
-    return <ZipNavigator zipContent={zipContent} onFileClick={handleZipFileClick} />;
-  }
-
-  if (fileType === '7z') return <div className="flex flex-col items-center justify-center h-full text-center p-6 bg-gray-50"><FolderOpen className="w-16 h-16 text-yellow-600 mb-4" /><h2 className="text-xl font-bold mb-2">7-Zip Archive (.7z)</h2><p className="max-w-md text-gray-600 mb-6">Browsing .7z files directly is too heavy for browsers. Please download locally.</p><a href={file ? URL.createObjectURL(file) : "#"} download={file?.name} className="bg-yellow-600 text-white px-6 py-3 rounded-lg hover:bg-yellow-700 transition flex items-center gap-2"><Download size={20} /> Download .7z File</a></div>;
-
+  if ((fileType === 'zip' || fileType === 'jar') && zipContent) return <ZipNavigator zipContent={zipContent} onFileClick={handleZipFileClick} />;
+  
   return renderContent(fileType, file ? URL.createObjectURL(file) : null, fileContent, backendData, null, file?.name);
 };
 
