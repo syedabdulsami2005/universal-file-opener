@@ -3,8 +3,8 @@ import JSZip from "jszip";
 import axios from "axios";
 import * as XLSX from "xlsx"; 
 import mammoth from "mammoth";
-import hljs from "highlight.js"; // Needed for colorful IPYNB
-import "highlight.js/styles/github.css"; // Needed for styles
+import hljs from "highlight.js"; 
+import "highlight.js/styles/github.css"; 
 import { Loader2, Download, FileText, FolderOpen, ArrowLeft, FileQuestion, ChevronLeft, ChevronRight, FileCode, FileImage, Home } from "lucide-react";
 
 // Lazy Load Components
@@ -22,7 +22,7 @@ const LoadingSpinner = ({ text }) => (
   </div>
 );
 
-// --- 1. SMART ZIP NAVIGATOR (Horizontal Scroll Enabled) ---
+// --- 1. SMART ZIP NAVIGATOR ---
 const ZipNavigator = ({ zipContent, onFileClick }) => {
   const [currentPath, setCurrentPath] = useState(""); 
 
@@ -58,7 +58,6 @@ const ZipNavigator = ({ zipContent, onFileClick }) => {
 
   return (
     <div className="flex flex-col h-full bg-white">
-      {/* Navigation Bar */}
       <div className="p-3 border-b bg-gray-50 flex items-center gap-2 shadow-sm shrink-0 overflow-x-auto whitespace-nowrap">
         {currentPath ? (
           <button onClick={goUp} className="flex items-center gap-1 text-sm font-bold text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-full transition bg-white border border-blue-100">
@@ -71,7 +70,6 @@ const ZipNavigator = ({ zipContent, onFileClick }) => {
         <span className="text-sm font-mono text-gray-700">{currentPath || "/"}</span>
       </div>
 
-      {/* File List (Horizontal Scroll Enabled) */}
       <div className="flex-1 overflow-auto p-2">
         <div className="flex flex-col gap-1 w-max min-w-full">
           {folders.map(folder => (
@@ -100,7 +98,7 @@ const ZipNavigator = ({ zipContent, onFileClick }) => {
   );
 };
 
-// --- 2. PRECISE ZOOM WRAPPER (Universal Horizontal Scroll Support) ---
+// --- 2. PRECISE ZOOM WRAPPER ---
 const ZoomWrapper = ({ children, className = "" }) => {
   const containerRef = useRef(null);
   const contentRef = useRef(null);
@@ -124,9 +122,8 @@ const ZoomWrapper = ({ children, className = "" }) => {
         const mouseY = centerY - rect.top;
 
         content.style.transform = `scale(${newScale})`;
-        // FIX: 'fit-content' allows the element to be wide naturally, enabling horizontal scroll
         content.style.width = newScale > 1 ? `${newScale * 100}%` : 'fit-content';
-        content.style.minWidth = '100%'; // Ensures it at least fills screen
+        content.style.minWidth = '100%';
         content.style.transformOrigin = "top left";
         state.current.scale = newScale;
 
@@ -191,7 +188,7 @@ const ZoomWrapper = ({ children, className = "" }) => {
 };
 
 // --- 3. PAGINATED TABLE ---
-const PaginatedTable = ({ data }) => {
+const PaginatedTable = ({ data, fileName }) => {
   const [page, setPage] = useState(0);
   const rowsPerPage = 500;
   const totalPages = Math.ceil(data.length / rowsPerPage);
@@ -225,13 +222,11 @@ const PaginatedTable = ({ data }) => {
   );
 };
 
-// --- 4. NOTEBOOK PARSER (With Highlight.js for Correct Colors) ---
+// --- 4. NOTEBOOK PARSER ---
 const convertIpynbToHtml = async (blob) => {
   try {
     const text = await blob.text();
     const json = JSON.parse(text);
-    
-    // FIX: Using fit-content for horizontal scrolling
     let html = '<div style="padding: 20px; font-family: -apple-system, system-ui, sans-serif; min-width: 100%; width: fit-content; box-sizing: border-box;">';
     
     if (json.cells) {
@@ -239,16 +234,12 @@ const convertIpynbToHtml = async (blob) => {
         if (cell.cell_type === 'code') {
            const source = Array.isArray(cell.source) ? cell.source.join('') : cell.source;
            if (source && source.trim()) {
-             // FIX: Using proper syntax highlighting library instead of raw Regex
              let highlighted = source;
              try {
-                // highlight.js auto-detects or uses python
                 if (hljs) highlighted = hljs.highlight(source, { language: 'python' }).value;
              } catch(e) {
-                // Fallback escape if highlighter fails
                 highlighted = source.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
              }
-
              html += `
                <div style="margin-bottom: 12px; border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden;">
                  <div style="background: #f8fafc; padding: 6px 12px; border-bottom: 1px solid #e5e7eb; font-size: 11px; color: #64748b; font-family: monospace;">In [${cell.execution_count || ' '}]:</div>
@@ -260,7 +251,6 @@ const convertIpynbToHtml = async (blob) => {
         } 
         else if (cell.cell_type === 'markdown') {
            const source = Array.isArray(cell.source) ? cell.source.join('') : cell.source;
-           // Basic Markdown formatting
            let formatted = source
               .replace(/### (.*)/g, '<h3 style="font-weight:600; font-size:1.1em; margin:16px 0 8px;">$1</h3>')
               .replace(/## (.*)/g, '<h2 style="font-weight:600; font-size:1.25em; margin:20px 0 10px; border-bottom:1px solid #eee;">$1</h2>')
@@ -270,7 +260,6 @@ const convertIpynbToHtml = async (blob) => {
               .replace(/\n/g, '<br>');
            html += `<div style="padding: 4px 8px; color: #334155; line-height: 1.6;">${formatted}</div>`;
         }
-  
         if (cell.outputs) {
            cell.outputs.forEach(out => {
              if (out.text) {
@@ -324,8 +313,36 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
   const [internalFileUrl, setInternalFileUrl] = useState(null);
   const [internalFileContent, setInternalFileContent] = useState(null);
   const [internalTableData, setInternalTableData] = useState(null); 
+  const [directTableData, setDirectTableData] = useState(null); // NEW: For direct CSV/Excel uploads
   const [internalBackendData, setInternalBackendData] = useState(null);
   const [internalLoading, setInternalLoading] = useState(false);
+
+  // --- NEW: Detect Direct CSV/Excel Uploads ---
+  useEffect(() => {
+    if (file && !zipContent) {
+      const ext = file.name.split('.').pop().toLowerCase();
+      if (['xlsx', 'xls', 'csv'].includes(ext)) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            if (ext === 'csv') {
+              const text = e.target.result;
+              const rows = text.split(/\r?\n/).map(row => row.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim()));
+              setDirectTableData(rows.filter(r => r.length > 0));
+            } else {
+              const wb = XLSX.read(e.target.result, { type: 'array' });
+              const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+              setDirectTableData(rows);
+            }
+          } catch(err) { console.error("Direct Table Parse Error", err); }
+        };
+        if (ext === 'csv') reader.readAsText(file);
+        else reader.readAsArrayBuffer(file);
+      } else {
+        setDirectTableData(null);
+      }
+    }
+  }, [file, zipContent]);
 
   useEffect(() => {
     if ((fileType === 'zip' || fileType === 'jar') && file) {
@@ -401,7 +418,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
 
   const renderContent = (type, url, content, data, tableData, fileName) => {
     
-    // A. TABLE DATA (Zoom Enabled)
+    // A. TABLE DATA (Zoom Enabled - Unified for Zip & Direct)
     if (tableData) {
        return <ZoomWrapper><PaginatedTable data={tableData} fileName={fileName} /></ZoomWrapper>;
     }
@@ -427,7 +444,6 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
        return (
          <ZoomWrapper className="bg-white">
              <div className="flex flex-col items-center min-h-screen pb-12">
-                {/* Removed pt-4 to fix top black gap */}
                 <div className="w-full md:w-[800px] lg:w-[900px] max-w-full shadow-lg">
                     <Suspense fallback={<LoadingSpinner />}><PdfRenderer url={url} /></Suspense>
                 </div>
@@ -436,7 +452,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
        );
     }
 
-    // E. CODE (Native Zoom - No ZoomWrapper to prevent layout break)
+    // E. CODE (Native Zoom)
     if (content || data?.type === 'text_content') {
       const displayContent = data?.type === 'text_content' ? data.content : content;
       const getLanguage = (e) => ({ js:'javascript', py:'python', java:'java', html:'html', css:'css', json:'json', sql:'sql', md:'markdown' }[e] || "plaintext");
@@ -454,7 +470,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
                    minimap: { enabled: false }, 
                    automaticLayout: true, 
                    scrollBeyondLastLine: false, 
-                   wordWrap: 'off' // FIX: Enables horizontal scrolling for long code lines
+                   wordWrap: 'off'
                }} 
              />
            </Suspense>
@@ -467,7 +483,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     if (EXT_MAP.video.includes(type)) return <div className="flex items-center justify-center h-full bg-black"><video controls src={url} className="max-w-full max-h-full" /></div>;
     if (EXT_MAP.audio.includes(type)) return <div className="flex items-center justify-center h-60"><audio controls src={url} /></div>;
     
-    // G. Fallback
+    // G. FALLBACK
     return (
       <div className="flex flex-col items-center justify-center h-full bg-gray-50 text-gray-600 p-6 text-center">
         <FileQuestion className="w-12 h-12 text-gray-400 mb-4" />
@@ -493,7 +509,8 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
 
   if ((fileType === 'zip' || fileType === 'jar') && zipContent) return <ZipNavigator zipContent={zipContent} onFileClick={handleZipFileClick} />;
   
-  return renderContent(fileType, file ? URL.createObjectURL(file) : null, fileContent, backendData, null, file?.name);
+  // FIX: Pass directTableData to renderContent to fix the direct file viewing issue
+  return renderContent(fileType, file ? URL.createObjectURL(file) : null, fileContent, backendData, directTableData, file?.name);
 };
 
 export default UniversalViewer;
