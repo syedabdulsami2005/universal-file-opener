@@ -122,8 +122,8 @@ const ZoomWrapper = ({ children, className = "" }) => {
         const mouseY = centerY - rect.top;
 
         content.style.transform = `scale(${newScale})`;
-        content.style.width = newScale > 1 ? `${newScale * 100}%` : 'fit-content';
-        content.style.minWidth = '100%';
+        content.style.width = newScale > 1 ? `${newScale * 100}%` : '100%';
+        content.style.minWidth = '100%'; 
         content.style.transformOrigin = "top left";
         state.current.scale = newScale;
 
@@ -187,32 +187,35 @@ const ZoomWrapper = ({ children, className = "" }) => {
   );
 };
 
-// --- 3. PAGINATED TABLE ---
-const PaginatedTable = ({ data, fileName }) => {
+// --- 3. PAGINATED TABLE (FIXED: Standard Scroll, No Zoom Issues) ---
+const PaginatedTable = ({ data }) => {
   const [page, setPage] = useState(0);
   const rowsPerPage = 500;
   const totalPages = Math.ceil(data.length / rowsPerPage);
   const currentRows = data.slice(page * rowsPerPage, (page + 1) * rowsPerPage);
 
+  // FIX: Table uses min-width to force scrollbars when content is wide
   const html = `
-    <table style="border-collapse: collapse; background: white; width: 100%;">
-      ${currentRows.map((row, idx) => `
-        <tr style="background: ${idx % 2 === 0 ? '#fff' : '#f9fafb'}; border-bottom: 1px solid #eee;">
-          ${row.map((cell, cIdx) => {
-             const tag = (page === 0 && idx === 0) ? 'th' : 'td';
-             const bg = (page === 0 && idx === 0) ? 'background:#f3f4f6; font-weight:bold;' : '';
-             return `<${tag} style="padding: 8px; border: 1px solid #ddd; ${bg} white-space: nowrap;">${cell ?? ''}</${tag}>`;
-          }).join('')}
-        </tr>
-      `).join('')}
-    </table>
+    <div style="overflow-x: auto; width: 100%;">
+      <table style="border-collapse: collapse; background: white; min-width: 100%; width: max-content; table-layout: auto;">
+        ${currentRows.map((row, idx) => `
+          <tr style="background: ${idx % 2 === 0 ? '#fff' : '#f9fafb'}; border-bottom: 1px solid #eee;">
+            ${row.map((cell, cIdx) => {
+               const tag = (page === 0 && idx === 0) ? 'th' : 'td';
+               const bg = (page === 0 && idx === 0) ? 'background:#f3f4f6; font-weight:bold;' : '';
+               return `<${tag} style="padding: 10px; border: 1px solid #e5e7eb; ${bg} white-space: nowrap; font-size: 14px; color: #374151;">${cell ?? ''}</${tag}>`;
+            }).join('')}
+          </tr>
+        `).join('')}
+      </table>
+    </div>
   `;
 
   return (
-    <div className="flex flex-col h-full w-max min-w-full bg-white">
-      <div className="flex-1 overflow-auto" dangerouslySetInnerHTML={{ __html: html }} />
+    <div className="flex flex-col h-full w-full bg-white relative">
+      <div className="flex-1 overflow-auto w-full" dangerouslySetInnerHTML={{ __html: html }} />
       {totalPages > 1 && (
-        <div className="flex items-center justify-between p-3 border-t bg-gray-50 shrink-0 sticky bottom-0 left-0 w-full">
+        <div className="flex items-center justify-between p-3 border-t bg-gray-50 shrink-0 sticky bottom-0 left-0 w-full z-10">
           <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} className="px-3 py-1 bg-white border rounded shadow-sm disabled:opacity-50">Prev</button>
           <span className="text-sm text-gray-600">Page {page + 1} of {totalPages}</span>
           <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page === totalPages - 1} className="px-3 py-1 bg-white border rounded shadow-sm disabled:opacity-50">Next</button>
@@ -313,11 +316,11 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
   const [internalFileUrl, setInternalFileUrl] = useState(null);
   const [internalFileContent, setInternalFileContent] = useState(null);
   const [internalTableData, setInternalTableData] = useState(null); 
-  const [directTableData, setDirectTableData] = useState(null); // NEW: For direct CSV/Excel uploads
+  const [directTableData, setDirectTableData] = useState(null); // Fix for direct opening
   const [internalBackendData, setInternalBackendData] = useState(null);
   const [internalLoading, setInternalLoading] = useState(false);
 
-  // --- NEW: Detect Direct CSV/Excel Uploads ---
+  // --- FIX: Detect Direct CSV/Excel Uploads ---
   useEffect(() => {
     if (file && !zipContent) {
       const ext = file.name.split('.').pop().toLowerCase();
@@ -418,9 +421,9 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
 
   const renderContent = (type, url, content, data, tableData, fileName) => {
     
-    // A. TABLE DATA (Zoom Enabled - Unified for Zip & Direct)
+    // A. TABLE DATA (FIX: Removed ZoomWrapper to allow native scrolling)
     if (tableData) {
-       return <ZoomWrapper><PaginatedTable data={tableData} fileName={fileName} /></ZoomWrapper>;
+       return <PaginatedTable data={tableData} fileName={fileName} />;
     }
     // B. HTML DOCUMENTS (Zoom Enabled)
     if (data?.type === 'html_table' || data?.type === 'html_doc') {
@@ -452,7 +455,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
        );
     }
 
-    // E. CODE (Native Zoom)
+    // E. CODE (Native Zoom - No ZoomWrapper)
     if (content || data?.type === 'text_content') {
       const displayContent = data?.type === 'text_content' ? data.content : content;
       const getLanguage = (e) => ({ js:'javascript', py:'python', java:'java', html:'html', css:'css', json:'json', sql:'sql', md:'markdown' }[e] || "plaintext");
@@ -483,7 +486,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     if (EXT_MAP.video.includes(type)) return <div className="flex items-center justify-center h-full bg-black"><video controls src={url} className="max-w-full max-h-full" /></div>;
     if (EXT_MAP.audio.includes(type)) return <div className="flex items-center justify-center h-60"><audio controls src={url} /></div>;
     
-    // G. FALLBACK
+    // G. Fallback
     return (
       <div className="flex flex-col items-center justify-center h-full bg-gray-50 text-gray-600 p-6 text-center">
         <FileQuestion className="w-12 h-12 text-gray-400 mb-4" />
@@ -509,7 +512,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
 
   if ((fileType === 'zip' || fileType === 'jar') && zipContent) return <ZipNavigator zipContent={zipContent} onFileClick={handleZipFileClick} />;
   
-  // FIX: Pass directTableData to renderContent to fix the direct file viewing issue
+  // FIX: Pass directTableData to allow direct viewing of CSV/Excel
   return renderContent(fileType, file ? URL.createObjectURL(file) : null, fileContent, backendData, directTableData, file?.name);
 };
 
