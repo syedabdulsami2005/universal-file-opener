@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import axios from 'axios';
-import { FileUp, Loader2 } from 'lucide-react'; // We use Loader2 for the spinner
+import { FileUp, Loader2, X } from 'lucide-react'; 
 import UniversalViewer from './UniversalViewer';
 
 // API URL (Your live backend)
@@ -16,6 +16,8 @@ export default function App() {
 
   const onDrop = useCallback(async (acceptedFiles) => {
     const uploadedFile = acceptedFiles[0];
+    if (!uploadedFile) return;
+
     setFile(uploadedFile);
     setBackendData(null);
     setContent(null); 
@@ -52,7 +54,8 @@ export default function App() {
     }
 
     // 2. Send to Backend (for complex docs) or just finish loading
-    const needsBackend = ['xlsx','xls','csv','parquet','docx','pptx','epub','ipynb'].includes(ext);
+    // Note: PDF is now handled locally by UniversalViewer, so we removed it from backend list
+    const needsBackend = ['pptx','ppt','doc','odp'].includes(ext);
     
     if (needsBackend) {
       const formData = new FormData();
@@ -66,41 +69,99 @@ export default function App() {
         setLoading(false);
       }
     } else if (!codeExts.includes(ext)) {
+      // Images, Video, Audio, Excel, Word (docx), PDF are handled by UniversalViewer directly
       setLoading(false);
     }
 
   }, []);
 
-  const { getRootProps, getInputProps } = useDropzone({ onDrop });
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop });
 
+  // --- 1. VIEWER SCREEN (File is Loaded) ---
+  if (file) {
+    return (
+      <div className="flex flex-col h-screen bg-gray-50 overflow-hidden">
+        {/* Header Bar */}
+        <div className="h-16 bg-white border-b flex items-center justify-between px-6 shadow-sm shrink-0 z-50">
+           <div className="flex items-center gap-3">
+             <img src="/logo.jpeg" alt="Fylix Logo" className="w-10 h-10 rounded-lg shadow-sm" />
+             <span className="font-bold text-2xl text-gray-800 tracking-tight">Fylix</span>
+           </div>
+           
+           <div className="flex items-center gap-4">
+             <span className="text-sm font-medium text-gray-500 hidden sm:block">{file.name}</span>
+             <button 
+               onClick={() => setFile(null)} 
+               className="flex items-center gap-2 bg-red-50 text-red-600 hover:bg-red-100 px-4 py-2 rounded-lg transition font-medium text-sm"
+             >
+               <X size={18} /> Close File
+             </button>
+           </div>
+        </div>
+
+        {/* Main Content Area */}
+        <div className="flex-1 overflow-hidden relative">
+           {loading ? (
+              <div className="flex flex-col items-center justify-center h-full bg-white text-blue-600">
+                 <Loader2 className="w-16 h-16 animate-spin mb-4" />
+                 <h2 className="text-xl font-semibold">Processing File...</h2>
+                 <p className="text-gray-400 text-sm mt-2">Optimizing for instant view</p>
+              </div>
+           ) : (
+              <UniversalViewer file={file} fileType={fileType} fileContent={content} backendData={backendData} />
+           )}
+        </div>
+      </div>
+    );
+  }
+
+  // --- 2. LANDING SCREEN (No File) ---
   return (
-    <div className="flex h-screen bg-gray-100 font-sans overflow-hidden">
-      <div className="w-full h-full p-6 flex flex-col">
-        {/* Header */}
-        <div {...getRootProps()} className="bg-white border-2 border-dashed border-blue-300 p-4 rounded-xl cursor-pointer hover:bg-blue-50 transition mb-4 flex items-center justify-center gap-3 shadow-sm">
-          <input {...getInputProps()} />
-          <FileUp className="text-blue-500 w-6 h-6" />
-          <span className="font-semibold text-gray-700 text-lg">Click or Drag File Here to Open</span>
+    <div className="flex flex-col h-screen w-screen bg-gray-50 items-center justify-center p-6">
+      
+      {/* Branding Section */}
+      <div className="text-center mb-10 animate-fade-in-up">
+        <div className="relative inline-block group">
+           <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 to-cyan-500 rounded-2xl blur opacity-25 group-hover:opacity-50 transition duration-1000"></div>
+           <img 
+             src="/logo.jpeg" 
+             alt="Fylix Logo" 
+             className="relative w-28 h-28 mx-auto rounded-2xl shadow-xl transform transition duration-500 hover:scale-105 mb-6 object-cover" 
+           />
+        </div>
+        <h1 className="text-6xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-slate-900 to-slate-700 mb-3 tracking-tight">
+          Fylix
+        </h1>
+        <p className="text-gray-500 text-xl font-medium">The Universal File Opener</p>
+      </div>
+
+      {/* Dropzone Area */}
+      <div 
+        {...getRootProps()} 
+        className={`
+          w-full max-w-2xl bg-white border-3 border-dashed rounded-3xl cursor-pointer transition-all duration-300 ease-in-out
+          flex flex-col items-center justify-center p-12 text-center shadow-sm hover:shadow-xl
+          ${isDragActive ? 'border-blue-500 bg-blue-50 scale-105' : 'border-gray-300 hover:border-blue-400 hover:bg-gray-50'}
+        `}
+      >
+        <input {...getInputProps()} />
+        
+        <div className="bg-blue-100 p-4 rounded-full mb-4">
+          <FileUp className={`w-10 h-10 text-blue-600 ${isDragActive ? 'animate-bounce' : ''}`} />
         </div>
         
-        {/* Main Viewer */}
-        <div className="flex-1 bg-white rounded-xl shadow-lg border overflow-hidden relative flex flex-col items-center justify-center">
-          {!file ? (
-            <div className="flex flex-col items-center justify-center h-full text-gray-400">
-              <FileUp className="w-16 h-16 mb-4 opacity-20" />
-              <p>No file loaded</p>
-            </div>
-          ) : loading ? (
-            // --- NEW CODE-BASED LOADING SCREEN ---
-            <div className="flex flex-col items-center justify-center h-full text-blue-600">
-               <Loader2 className="w-16 h-16 animate-spin mb-4" />
-               <h2 className="text-xl font-semibold">Converting File...</h2>
-               <p className="text-gray-400 text-sm mt-2">Please wait a moment</p>
-            </div>
-          ) : (
-             <UniversalViewer file={file} fileType={fileType} fileContent={content} backendData={backendData} />
-          )}
-        </div>
+        <h3 className="text-2xl font-bold text-gray-700 mb-2">
+          {isDragActive ? "Drop it like it's hot!" : "Click to Upload or Drag & Drop"}
+        </h3>
+        <p className="text-gray-400 text-sm max-w-md mx-auto">
+          Supports Code, Office Docs, PDFs, Images, Videos, Archives & more. 
+          <br/>Instant preview directly in your browser.
+        </p>
+      </div>
+
+      {/* Footer */}
+      <div className="mt-12 text-gray-400 text-xs">
+        &copy; 2026 Fylix. Powered by WebAssembly & React.
       </div>
     </div>
   );

@@ -188,15 +188,15 @@ const ZoomWrapper = ({ children, className = "" }) => {
 };
 
 // --- 3. PAGINATED TABLE (FIXED: Standard Scroll, No Zoom Issues) ---
-const PaginatedTable = ({ data }) => {
+const PaginatedTable = ({ data, fileName }) => {
   const [page, setPage] = useState(0);
   const rowsPerPage = 500;
   const totalPages = Math.ceil(data.length / rowsPerPage);
   const currentRows = data.slice(page * rowsPerPage, (page + 1) * rowsPerPage);
 
-  // FIX: Table uses min-width to force scrollbars when content is wide
+  // FIX: Table uses width: max-content to force horizontal scrollbars
   const html = `
-    <div style="overflow-x: auto; width: 100%;">
+    <div style="overflow-x: auto; width: 100%; height: 100%;">
       <table style="border-collapse: collapse; background: white; min-width: 100%; width: max-content; table-layout: auto;">
         ${currentRows.map((row, idx) => `
           <tr style="background: ${idx % 2 === 0 ? '#fff' : '#f9fafb'}; border-bottom: 1px solid #eee;">
@@ -316,11 +316,11 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
   const [internalFileUrl, setInternalFileUrl] = useState(null);
   const [internalFileContent, setInternalFileContent] = useState(null);
   const [internalTableData, setInternalTableData] = useState(null); 
-  const [directTableData, setDirectTableData] = useState(null); // Fix for direct opening
+  const [directTableData, setDirectTableData] = useState(null); // --- FIX ADDED: State for direct file table data
   const [internalBackendData, setInternalBackendData] = useState(null);
   const [internalLoading, setInternalLoading] = useState(false);
 
-  // --- FIX: Detect Direct CSV/Excel Uploads ---
+  // --- FIX ADDED: Detect Direct CSV/Excel Uploads and Parse Them ---
   useEffect(() => {
     if (file && !zipContent) {
       const ext = file.name.split('.').pop().toLowerCase();
@@ -421,7 +421,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
 
   const renderContent = (type, url, content, data, tableData, fileName) => {
     
-    // A. TABLE DATA (FIX: Removed ZoomWrapper to allow native scrolling)
+    // A. TABLE DATA (FIX ADDED: Removed ZoomWrapper here so native scrolling works)
     if (tableData) {
        return <PaginatedTable data={tableData} fileName={fileName} />;
     }
@@ -442,7 +442,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
       );
     }
 
-    // D. PDF (Zoom Wrapper Enabled + White BG to fix black box)
+    // D. PDF (Zoom Wrapper Enabled)
     if (type === 'pdf' || data?.type === 'pdf_pass') {
        return (
          <ZoomWrapper className="bg-white">
@@ -455,7 +455,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
        );
     }
 
-    // E. CODE (Native Zoom - No ZoomWrapper)
+    // E. CODE (Native Zoom)
     if (content || data?.type === 'text_content') {
       const displayContent = data?.type === 'text_content' ? data.content : content;
       const getLanguage = (e) => ({ js:'javascript', py:'python', java:'java', html:'html', css:'css', json:'json', sql:'sql', md:'markdown' }[e] || "plaintext");
@@ -512,7 +512,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
 
   if ((fileType === 'zip' || fileType === 'jar') && zipContent) return <ZipNavigator zipContent={zipContent} onFileClick={handleZipFileClick} />;
   
-  // FIX: Pass directTableData to allow direct viewing of CSV/Excel
+  // FIX ADDED: Pass directTableData so direct CSVs open as Tables, not text.
   return renderContent(fileType, file ? URL.createObjectURL(file) : null, fileContent, backendData, directTableData, file?.name);
 };
 
