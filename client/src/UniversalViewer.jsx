@@ -126,7 +126,7 @@ const ZoomWrapper = ({ children, className = "" }) => {
         content.style.transform = `scale(${newScale})`;
         // FIX: 'fit-content' allows the element to be wide naturally, enabling horizontal scroll
         content.style.width = newScale > 1 ? `${newScale * 100}%` : 'fit-content';
-        content.style.minWidth = '100%'; // Ensures it at least fills screen
+        content.style.minWidth = '100%'; 
         content.style.transformOrigin = "top left";
         state.current.scale = newScale;
 
@@ -183,7 +183,8 @@ const ZoomWrapper = ({ children, className = "" }) => {
 
   return (
     <div ref={containerRef} className={`relative w-full h-full overflow-auto bg-gray-50 touch-pan-x touch-pan-y ${className}`}>
-      <div ref={contentRef} className="origin-top-left will-change-transform min-h-full" style={{ width: '100%', transition: 'transform 0.05s linear' }}>
+      {/* --- FIX: Changed width to 'fit-content' and added 'minWidth' --- */}
+      <div ref={contentRef} className="origin-top-left will-change-transform min-h-full" style={{ width: 'fit-content', minWidth: '100%', transition: 'transform 0.05s linear' }}>
         {children}
       </div>
     </div>
@@ -225,7 +226,7 @@ const PaginatedTable = ({ data }) => {
   );
 };
 
-// --- 4. NOTEBOOK PARSER (With Highlight.js for Correct Colors) ---
+// --- 4. NOTEBOOK PARSER ---
 const convertIpynbToHtml = async (blob) => {
   try {
     const text = await blob.text();
@@ -329,7 +330,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
   const [internalBackendData, setInternalBackendData] = useState(null);
   const [internalLoading, setInternalLoading] = useState(false);
 
-  // --- NEW STATE: Single File Table Data ---
+  // Single File Table Data
   const [singleTableData, setSingleTableData] = useState(null);
 
   // --- A. ZIP LOADER ---
@@ -339,7 +340,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     }
   }, [file, fileType]);
 
-  // --- B. SINGLE FILE TABLE LOADER (FIXED) ---
+  // --- B. SINGLE FILE TABLE LOADER ---
   useEffect(() => {
     const parseSingleFile = async () => {
       // Reset if no file or not a table format
@@ -463,7 +464,6 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
        return (
          <ZoomWrapper className="bg-white">
              <div className="flex flex-col items-center min-h-screen pb-12">
-                {/* Removed pt-4 to fix top black gap */}
                 <div className="w-full md:w-[800px] lg:w-[900px] max-w-full shadow-lg">
                     <Suspense fallback={<LoadingSpinner />}><PdfRenderer url={url} /></Suspense>
                 </div>
@@ -490,7 +490,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
                    minimap: { enabled: false }, 
                    automaticLayout: true, 
                    scrollBeyondLastLine: false, 
-                   wordWrap: 'off' // FIX: Enables horizontal scrolling for long code lines
+                   wordWrap: 'off'
                }} 
              />
            </Suspense>
