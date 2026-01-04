@@ -3,8 +3,8 @@ import JSZip from "jszip";
 import axios from "axios";
 import * as XLSX from "xlsx"; 
 import mammoth from "mammoth";
-import hljs from "highlight.js"; 
-import "highlight.js/styles/github.css"; 
+import hljs from "highlight.js"; // Import Highlight.js for Notebooks
+import "highlight.js/styles/github.css"; // Import standard styling
 import { Loader2, Download, FileText, FolderOpen, ArrowLeft, FileQuestion, ChevronLeft, ChevronRight, FileCode, FileImage, Home } from "lucide-react";
 
 // Lazy Load Components
@@ -82,16 +82,16 @@ const ZipNavigator = ({ zipContent, onFileClick }) => {
             </div>
           ))}
           {files.map(file => {
-              let Icon = FileText;
-              const ext = file.name.split('.').pop().toLowerCase();
-              if (['png','jpg','jpeg','gif'].includes(ext)) Icon = FileImage;
-              if (['js','py','html','css','java','cpp','c'].includes(ext)) Icon = FileCode;
-              return (
+             let Icon = FileText;
+             const ext = file.name.split('.').pop().toLowerCase();
+             if (['png','jpg','jpeg','gif'].includes(ext)) Icon = FileImage;
+             if (['js','py','html','css','java','cpp','c'].includes(ext)) Icon = FileCode;
+             return (
               <div key={file.name} onClick={() => onFileClick(file.fullPath)} className="flex items-center gap-3 p-3 rounded-lg hover:bg-blue-50 active:bg-blue-100 cursor-pointer border border-transparent hover:border-blue-200 transition min-w-[300px]">
                 <Icon size={24} className="text-blue-500 shrink-0" />
                 <span className="text-sm font-medium text-gray-700">{file.name}</span>
               </div>
-              );
+             );
           })}
           {folders.length === 0 && files.length === 0 && <div className="text-center p-8 text-gray-400 italic w-full">Empty Folder</div>}
         </div>
@@ -126,7 +126,7 @@ const ZoomWrapper = ({ children, className = "" }) => {
         content.style.transform = `scale(${newScale})`;
         // FIX: 'fit-content' allows the element to be wide naturally, enabling horizontal scroll
         content.style.width = newScale > 1 ? `${newScale * 100}%` : 'fit-content';
-        content.style.minWidth = '100%'; 
+        content.style.minWidth = '100%'; // Ensures it at least fills screen
         content.style.transformOrigin = "top left";
         state.current.scale = newScale;
 
@@ -183,8 +183,7 @@ const ZoomWrapper = ({ children, className = "" }) => {
 
   return (
     <div ref={containerRef} className={`relative w-full h-full overflow-auto bg-gray-50 touch-pan-x touch-pan-y ${className}`}>
-      {/* --- FIX: Changed width to 'fit-content' and added 'minWidth' --- */}
-      <div ref={contentRef} className="origin-top-left will-change-transform min-h-full" style={{ width: 'fit-content', minWidth: '100%', transition: 'transform 0.05s linear' }}>
+      <div ref={contentRef} className="origin-top-left will-change-transform min-h-full" style={{ width: '100%', transition: 'transform 0.05s linear' }}>
         {children}
       </div>
     </div>
@@ -226,7 +225,7 @@ const PaginatedTable = ({ data }) => {
   );
 };
 
-// --- 4. NOTEBOOK PARSER ---
+// --- 4. NOTEBOOK PARSER (With Highlight.js for Correct Colors) ---
 const convertIpynbToHtml = async (blob) => {
   try {
     const text = await blob.text();
@@ -284,8 +283,8 @@ const convertIpynbToHtml = async (blob) => {
                   html += `<div style="margin-left: 4px; margin-bottom: 12px; font-size: 12px; font-family: monospace; color: #475569; white-space: pre-wrap; overflow-x: auto;">${txt}</div>`;
                }
                if (out.data['image/png']) {
-                  const imgData = Array.isArray(out.data['image/png']) ? out.data['image/png'].join('') : out.data['image/png'];
-                  html += `<div style="margin: 12px 0;"><img src="data:image/png;base64,${imgData}" style="max-width: 100%; height: auto; border-radius: 4px;" /></div>`;
+                 const imgData = Array.isArray(out.data['image/png']) ? out.data['image/png'].join('') : out.data['image/png'];
+                 html += `<div style="margin: 12px 0;"><img src="data:image/png;base64,${imgData}" style="max-width: 100%; height: auto; border-radius: 4px;" /></div>`;
                }
              }
            });
@@ -321,8 +320,6 @@ const TEXT_EXTS = [...EXT_MAP.code, ...EXT_MAP.web, ...EXT_MAP.mobile, ...EXT_MA
 const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
   const [zipContent, setZipContent] = useState(null);
   const [selectedZipFile, setSelectedZipFile] = useState(null);
-  
-  // Internal (ZIP) State
   const [internalFileType, setInternalFileType] = useState('');
   const [internalFileUrl, setInternalFileUrl] = useState(null);
   const [internalFileContent, setInternalFileContent] = useState(null);
@@ -330,46 +327,12 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
   const [internalBackendData, setInternalBackendData] = useState(null);
   const [internalLoading, setInternalLoading] = useState(false);
 
-  // Single File Table Data
-  const [singleTableData, setSingleTableData] = useState(null);
-
-  // --- A. ZIP LOADER ---
   useEffect(() => {
     if ((fileType === 'zip' || fileType === 'jar') && file) {
       JSZip.loadAsync(file).then((zip) => setZipContent(zip));
     }
   }, [file, fileType]);
 
-  // --- B. SINGLE FILE TABLE LOADER ---
-  useEffect(() => {
-    const parseSingleFile = async () => {
-      // Reset if no file or not a table format
-      if (!file || !['xlsx', 'xls', 'csv'].includes(fileType)) {
-        setSingleTableData(null);
-        return;
-      }
-
-      try {
-        if (fileType === 'csv') {
-          const text = await file.text();
-          // Simple CSV Parser
-          const rows = text.split(/\r?\n/).map(row => row.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim()));
-          setSingleTableData(rows.filter(r => r.length > 1));
-        } else {
-          // Excel Parser
-          const ab = await file.arrayBuffer();
-          const wb = XLSX.read(ab, { type: 'array' });
-          const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
-          setSingleTableData(rows);
-        }
-      } catch (e) {
-        console.error("Single file parse error", e);
-      }
-    };
-    parseSingleFile();
-  }, [file, fileType]);
-
-  // --- C. ZIP ENTRY CLICK HANDLER ---
   const handleZipFileClick = async (relativePath) => {
     if (!zipContent) return;
     const zipObj = zipContent.files[relativePath];
@@ -464,6 +427,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
        return (
          <ZoomWrapper className="bg-white">
              <div className="flex flex-col items-center min-h-screen pb-12">
+                {/* Removed pt-4 to fix top black gap */}
                 <div className="w-full md:w-[800px] lg:w-[900px] max-w-full shadow-lg">
                     <Suspense fallback={<LoadingSpinner />}><PdfRenderer url={url} /></Suspense>
                 </div>
@@ -490,7 +454,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
                    minimap: { enabled: false }, 
                    automaticLayout: true, 
                    scrollBeyondLastLine: false, 
-                   wordWrap: 'off'
+                   wordWrap: 'off' // FIX: Enables horizontal scrolling for long code lines
                }} 
              />
            </Suspense>
@@ -529,8 +493,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
 
   if ((fileType === 'zip' || fileType === 'jar') && zipContent) return <ZipNavigator zipContent={zipContent} onFileClick={handleZipFileClick} />;
   
-  // FINAL RETURN: Pass singleTableData so Excel/CSV opens correctly
-  return renderContent(fileType, file ? URL.createObjectURL(file) : null, fileContent, backendData, singleTableData, file?.name);
+  return renderContent(fileType, file ? URL.createObjectURL(file) : null, fileContent, backendData, null, file?.name);
 };
 
 export default UniversalViewer;
