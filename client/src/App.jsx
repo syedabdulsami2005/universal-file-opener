@@ -21,7 +21,7 @@ export default function App() {
     setFile(uploadedFile);
     setBackendData(null);
     setContent(null); 
-    setLoading(true); // Start Loading
+    setLoading(true);
 
     const ext = uploadedFile.name.split('.').pop().toLowerCase();
     setFileType(ext);
@@ -53,8 +53,7 @@ export default function App() {
       setContent(null);
     }
 
-    // 2. Send to Backend (for complex docs) or just finish loading
-    // Note: PDF is now handled locally by UniversalViewer, so we removed it from backend list
+    // 2. Send to Backend (for complex docs only)
     const needsBackend = ['pptx','ppt','doc','odp'].includes(ext);
     
     if (needsBackend) {
@@ -68,8 +67,8 @@ export default function App() {
       } finally {
         setLoading(false);
       }
-    } else if (!codeExts.includes(ext)) {
-      // Images, Video, Audio, Excel, Word (docx), PDF are handled by UniversalViewer directly
+    } else {
+      // All other files (Images, CSV, Excel, PDF, etc.) are handled locally by UniversalViewer
       setLoading(false);
     }
 
@@ -85,7 +84,8 @@ export default function App() {
         <div className="h-16 bg-white border-b flex items-center justify-between px-6 shadow-sm shrink-0 z-50">
            <div className="flex items-center gap-3">
              <img src="/logo.jpeg" alt="Fylix Logo" className="w-10 h-10 rounded-lg shadow-sm" />
-             <span className="font-bold text-2xl text-gray-800 tracking-tight">Fylix</span>
+             {/* FIX: Added pb-1 to fix 'y' cut-off in small header */}
+             <span className="font-bold text-2xl text-gray-800 tracking-tight pb-1">Fylix</span>
            </div>
            
            <div className="flex items-center gap-4">
@@ -129,7 +129,9 @@ export default function App() {
              className="relative w-28 h-28 mx-auto rounded-2xl shadow-xl transform transition duration-500 hover:scale-105 mb-6 object-cover" 
            />
         </div>
-        <h1 className="text-6xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-slate-900 to-slate-700 mb-3 tracking-tight">
+        
+        {/* FIX: Increased padding-bottom (pb-4) to prevent 'y' from being cut off */}
+        <h1 className="text-6xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-slate-900 to-slate-700 mb-3 tracking-tight pb-4">
           Fylix
         </h1>
         <p className="text-gray-500 text-xl font-medium">The Universal File Opener</p>

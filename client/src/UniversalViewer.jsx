@@ -194,26 +194,27 @@ const PaginatedTable = ({ data, fileName }) => {
   const totalPages = Math.ceil(data.length / rowsPerPage);
   const currentRows = data.slice(page * rowsPerPage, (page + 1) * rowsPerPage);
 
-  // FIX: Table uses width: max-content to force horizontal scrollbars
+  // FIX: Table uses width: max-content to force horizontal scrollbars inside the PARENT container
   const html = `
-    <div style="overflow-x: auto; width: 100%; height: 100%;">
-      <table style="border-collapse: collapse; background: white; min-width: 100%; width: max-content; table-layout: auto;">
-        ${currentRows.map((row, idx) => `
-          <tr style="background: ${idx % 2 === 0 ? '#fff' : '#f9fafb'}; border-bottom: 1px solid #eee;">
-            ${row.map((cell, cIdx) => {
-               const tag = (page === 0 && idx === 0) ? 'th' : 'td';
-               const bg = (page === 0 && idx === 0) ? 'background:#f3f4f6; font-weight:bold;' : '';
-               return `<${tag} style="padding: 10px; border: 1px solid #e5e7eb; ${bg} white-space: nowrap; font-size: 14px; color: #374151;">${cell ?? ''}</${tag}>`;
-            }).join('')}
-          </tr>
-        `).join('')}
-      </table>
-    </div>
+    <table style="border-collapse: collapse; background: white; min-width: 100%; width: max-content; table-layout: auto;">
+      ${currentRows.map((row, idx) => `
+        <tr style="background: ${idx % 2 === 0 ? '#fff' : '#f9fafb'}; border-bottom: 1px solid #eee;">
+          ${row.map((cell, cIdx) => {
+             const tag = (page === 0 && idx === 0) ? 'th' : 'td';
+             const bg = (page === 0 && idx === 0) ? 'background:#f3f4f6; font-weight:bold;' : '';
+             return `<${tag} style="padding: 10px; border: 1px solid #e5e7eb; ${bg} white-space: nowrap; font-size: 14px; color: #374151;">${cell ?? ''}</${tag}>`;
+          }).join('')}
+        </tr>
+      `).join('')}
+    </table>
   `;
 
   return (
     <div className="flex flex-col h-full w-full bg-white relative">
-      <div className="flex-1 overflow-auto w-full" dangerouslySetInnerHTML={{ __html: html }} />
+      {/* FIX: overflow-auto is applied HERE to the main container. 
+         This makes the scrollbar stick to the screen, not the bottom of the table content. */}
+      <div className="flex-1 w-full overflow-auto p-4" dangerouslySetInnerHTML={{ __html: html }} />
+      
       {totalPages > 1 && (
         <div className="flex items-center justify-between p-3 border-t bg-gray-50 shrink-0 sticky bottom-0 left-0 w-full z-10">
           <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} className="px-3 py-1 bg-white border rounded shadow-sm disabled:opacity-50">Prev</button>
@@ -316,11 +317,11 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
   const [internalFileUrl, setInternalFileUrl] = useState(null);
   const [internalFileContent, setInternalFileContent] = useState(null);
   const [internalTableData, setInternalTableData] = useState(null); 
-  const [directTableData, setDirectTableData] = useState(null); // --- FIX ADDED: State for direct file table data
+  const [directTableData, setDirectTableData] = useState(null); 
   const [internalBackendData, setInternalBackendData] = useState(null);
   const [internalLoading, setInternalLoading] = useState(false);
 
-  // --- FIX ADDED: Detect Direct CSV/Excel Uploads and Parse Them ---
+  // --- FIX: Detect Direct CSV/Excel Uploads and Parse Them ---
   useEffect(() => {
     if (file && !zipContent) {
       const ext = file.name.split('.').pop().toLowerCase();
@@ -344,6 +345,17 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
       } else {
         setDirectTableData(null);
       }
+    }
+  }, [file, zipContent]);
+
+  // --- FIX: Detect Direct IPYNB Uploads ---
+  useEffect(() => {
+    if (file && !zipContent && file.name.toLowerCase().endsWith('.ipynb')) {
+        setInternalLoading(true);
+        convertIpynbToHtml(file).then(html => {
+            setInternalBackendData({ type: 'html_doc', content: html });
+            setInternalLoading(false);
+        });
     }
   }, [file, zipContent]);
 
@@ -421,7 +433,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
 
   const renderContent = (type, url, content, data, tableData, fileName) => {
     
-    // A. TABLE DATA (FIX ADDED: Removed ZoomWrapper here so native scrolling works)
+    // A. TABLE DATA (FIX: Removed ZoomWrapper here)
     if (tableData) {
        return <PaginatedTable data={tableData} fileName={fileName} />;
     }
@@ -455,7 +467,7 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
        );
     }
 
-    // E. CODE (Native Zoom)
+    // E. CODE (Native Zoom - No ZoomWrapper)
     if (content || data?.type === 'text_content') {
       const displayContent = data?.type === 'text_content' ? data.content : content;
       const getLanguage = (e) => ({ js:'javascript', py:'python', java:'java', html:'html', css:'css', json:'json', sql:'sql', md:'markdown' }[e] || "plaintext");
@@ -512,8 +524,15 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
 
   if ((fileType === 'zip' || fileType === 'jar') && zipContent) return <ZipNavigator zipContent={zipContent} onFileClick={handleZipFileClick} />;
   
-  // FIX ADDED: Pass directTableData so direct CSVs open as Tables, not text.
-  return renderContent(fileType, file ? URL.createObjectURL(file) : null, fileContent, backendData, directTableData, file?.name);
+  // FIX: Include internalBackendData in the 4th argument so direct IPYNB files work
+  return renderContent(
+    fileType, 
+    file ? URL.createObjectURL(file) : null, 
+    fileContent, 
+    backendData || internalBackendData, // <--- THIS FIXES THE IPYNB PREVIEW
+    directTableData, 
+    file?.name
+  );
 };
 
 export default UniversalViewer;
