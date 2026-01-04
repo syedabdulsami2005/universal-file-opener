@@ -3,8 +3,8 @@ import JSZip from "jszip";
 import axios from "axios";
 import * as XLSX from "xlsx"; 
 import mammoth from "mammoth";
-import hljs from "highlight.js"; // Import Highlight.js for Notebooks
-import "highlight.js/styles/github.css"; // Import standard styling
+import hljs from "highlight.js"; // Needed for colorful IPYNB
+import "highlight.js/styles/github.css"; // Needed for styles
 import { Loader2, Download, FileText, FolderOpen, ArrowLeft, FileQuestion, ChevronLeft, ChevronRight, FileCode, FileImage, Home } from "lucide-react";
 
 // Lazy Load Components
@@ -100,7 +100,7 @@ const ZipNavigator = ({ zipContent, onFileClick }) => {
   );
 };
 
-// --- 2. PRECISE ZOOM WRAPPER ---
+// --- 2. PRECISE ZOOM WRAPPER (Universal Horizontal Scroll Support) ---
 const ZoomWrapper = ({ children, className = "" }) => {
   const containerRef = useRef(null);
   const contentRef = useRef(null);
