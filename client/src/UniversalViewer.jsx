@@ -187,34 +187,32 @@ const ZoomWrapper = ({ children, className = "" }) => {
   );
 };
 
-// --- 3. PAGINATED TABLE (FIXED: Standard Scroll, No Zoom Issues) ---
+// --- 3. PAGINATED TABLE ---
 const PaginatedTable = ({ data, fileName }) => {
   const [page, setPage] = useState(0);
   const rowsPerPage = 500;
   const totalPages = Math.ceil(data.length / rowsPerPage);
   const currentRows = data.slice(page * rowsPerPage, (page + 1) * rowsPerPage);
 
-  // FIX: Table uses width: max-content to force horizontal scrollbars inside the PARENT container
   const html = `
-    <table style="border-collapse: collapse; background: white; min-width: 100%; width: max-content; table-layout: auto;">
-      ${currentRows.map((row, idx) => `
-        <tr style="background: ${idx % 2 === 0 ? '#fff' : '#f9fafb'}; border-bottom: 1px solid #eee;">
-          ${row.map((cell, cIdx) => {
-             const tag = (page === 0 && idx === 0) ? 'th' : 'td';
-             const bg = (page === 0 && idx === 0) ? 'background:#f3f4f6; font-weight:bold;' : '';
-             return `<${tag} style="padding: 10px; border: 1px solid #e5e7eb; ${bg} white-space: nowrap; font-size: 14px; color: #374151;">${cell ?? ''}</${tag}>`;
-          }).join('')}
-        </tr>
-      `).join('')}
-    </table>
+    <div style="overflow-x: auto; width: 100%;">
+      <table style="border-collapse: collapse; background: white; min-width: 100%; width: max-content; table-layout: auto;">
+        ${currentRows.map((row, idx) => `
+          <tr style="background: ${idx % 2 === 0 ? '#fff' : '#f9fafb'}; border-bottom: 1px solid #eee;">
+            ${row.map((cell, cIdx) => {
+               const tag = (page === 0 && idx === 0) ? 'th' : 'td';
+               const bg = (page === 0 && idx === 0) ? 'background:#f3f4f6; font-weight:bold;' : '';
+               return `<${tag} style="padding: 10px; border: 1px solid #e5e7eb; ${bg} white-space: nowrap; font-size: 14px; color: #374151;">${cell ?? ''}</${tag}>`;
+            }).join('')}
+          </tr>
+        `).join('')}
+      </table>
+    </div>
   `;
 
   return (
     <div className="flex flex-col h-full w-full bg-white relative">
-      {/* FIX: overflow-auto is applied HERE to the main container. 
-         This makes the scrollbar stick to the screen, not the bottom of the table content. */}
       <div className="flex-1 w-full overflow-auto p-4" dangerouslySetInnerHTML={{ __html: html }} />
-      
       {totalPages > 1 && (
         <div className="flex items-center justify-between p-3 border-t bg-gray-50 shrink-0 sticky bottom-0 left-0 w-full z-10">
           <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} className="px-3 py-1 bg-white border rounded shadow-sm disabled:opacity-50">Prev</button>
@@ -358,6 +356,27 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
         });
     }
   }, [file, zipContent]);
+
+  // --- FIX: Detect Direct DOCX Uploads (This was missing!) ---
+  useEffect(() => {
+    if (file && !zipContent && ['docx'].includes(fileType)) {
+        setInternalLoading(true);
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const arrayBuffer = e.target.result;
+                const result = await mammoth.convertToHtml({ arrayBuffer });
+                setInternalBackendData({ type: 'html_doc', content: result.value });
+            } catch (error) {
+                console.error("Docx parse error:", error);
+                setInternalBackendData({ type: 'html_doc', content: '<div style="color:red;padding:20px;">Failed to load DOCX file.</div>' });
+            } finally {
+                setInternalLoading(false);
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    }
+  }, [file, zipContent, fileType]);
 
   useEffect(() => {
     if ((fileType === 'zip' || fileType === 'jar') && file) {
@@ -524,12 +543,12 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
 
   if ((fileType === 'zip' || fileType === 'jar') && zipContent) return <ZipNavigator zipContent={zipContent} onFileClick={handleZipFileClick} />;
   
-  // FIX: Include internalBackendData in the 4th argument so direct IPYNB files work
+  // FIX: Include internalBackendData in renderContent for direct files (DOCX/IPYNB/CSV)
   return renderContent(
     fileType, 
     file ? URL.createObjectURL(file) : null, 
     fileContent, 
-    backendData || internalBackendData, // <--- THIS FIXES THE IPYNB PREVIEW
+    backendData || internalBackendData, 
     directTableData, 
     file?.name
   );
