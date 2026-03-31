@@ -53,7 +53,7 @@ export default function App() {
       setContent(null);
     }
 
-    // 2. Send to Backend (for complex docs only)
+    // 2. Send to Backend (for complex docs) or just finish loading
     const needsBackend = ['pptx','ppt','doc','odp'].includes(ext);
     
     if (needsBackend) {
@@ -68,7 +68,6 @@ export default function App() {
         setLoading(false);
       }
     } else {
-      // All other files (Images, CSV, Excel, PDF, etc.) are handled locally by UniversalViewer
       setLoading(false);
     }
 
@@ -83,8 +82,8 @@ export default function App() {
         {/* Header Bar */}
         <div className="h-16 bg-white border-b flex items-center justify-between px-6 shadow-sm shrink-0 z-50">
            <div className="flex items-center gap-3">
-             <img src="/logo.jpeg" alt="Fylix Logo" className="w-10 h-10 rounded-lg shadow-sm" />
-             {/* FIX: Added pb-1 to fix 'y' cut-off in small header */}
+             {/* UPDATED TO PNG */}
+             <img src="/logo.png" alt="Fylix Logo" className="w-10 h-10 object-contain drop-shadow-sm" />
              <span className="font-bold text-2xl text-gray-800 tracking-tight pb-1">Fylix</span>
            </div>
            
@@ -122,15 +121,15 @@ export default function App() {
       {/* Branding Section */}
       <div className="text-center mb-10 animate-fade-in-up">
         <div className="relative inline-block group">
-           <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 to-cyan-500 rounded-2xl blur opacity-25 group-hover:opacity-50 transition duration-1000"></div>
+           <div className="absolute -inset-4 bg-gradient-to-r from-blue-600 to-cyan-500 rounded-full blur opacity-20 group-hover:opacity-40 transition duration-1000"></div>
+           {/* UPDATED TO PNG */}
            <img 
-             src="/logo.jpeg" 
+             src="/logo.png" 
              alt="Fylix Logo" 
-             className="relative w-28 h-28 mx-auto rounded-2xl shadow-xl transform transition duration-500 hover:scale-105 mb-6 object-cover" 
+             className="relative w-32 h-32 mx-auto transform transition duration-500 hover:scale-110 mb-6 object-contain" 
            />
         </div>
         
-        {/* FIX: Increased padding-bottom (pb-4) to prevent 'y' from being cut off */}
         <h1 className="text-6xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-slate-900 to-slate-700 mb-3 tracking-tight pb-4">
           Fylix
         </h1>
