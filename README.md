@@ -1,7 +1,7 @@
 # 📁 Fylix - The Universal File Opener
 
 <div align="center">
-  <img src="public/logo.png" alt="Fylix Logo" width="150"/>
+  <img src="client/public/logo.png" alt="Fylix Logo" width="150"/>
   <br/>
   <p><b>Instant preview for Code, Office Docs, PDFs, Images, Videos, Archives, and more.</b></p>
 
@@ -50,7 +50,7 @@ Fylix utilizes a hybrid approach to render almost any file you throw at it:
 Clone the repository and install the web dependencies:
 
 ```bash
-git clone [https://github.com/yourusername/fylix.git](https://github.com/yourusername/fylix.git)
+git clone [https://github.com/syedabdulsami2005/universal-file-opener.git]
 cd fylix
 npm install
 npm run dev
