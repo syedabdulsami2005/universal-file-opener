@@ -1,29 +1,11 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import axios from 'axios';
 import { FileUp, Loader2, X, Download } from 'lucide-react'; 
 import UniversalViewer from './UniversalViewer';
-import { App as CapacitorApp } from '@capacitor/app';
-import { Filesystem } from '@capacitor/filesystem';
 
 // API URL (Your live backend)
 const API_URL = "https://universal-file-opener.onrender.com";
-
-// Helper function to convert base64 data from native OS to a Web Blob
-const base64ToBlob = (base64, mimeType = '') => {
-  const byteCharacters = atob(base64);
-  const byteArrays = [];
-  for (let offset = 0; offset < byteCharacters.length; offset += 512) {
-    const slice = byteCharacters.slice(offset, offset + 512);
-    const byteNumbers = new Array(slice.length);
-    for (let i = 0; i < slice.length; i++) {
-      byteNumbers[i] = slice.charCodeAt(i);
-    }
-    const byteArray = new Uint8Array(byteNumbers);
-    byteArrays.push(byteArray);
-  }
-  return new Blob(byteArrays, { type: mimeType });
-};
 
 export default function App() {
   const [file, setFile] = useState(null);
@@ -109,70 +91,6 @@ export default function App() {
     }
   };
 
- // --- NATIVE ANDROID INTENT LISTENER ---
-  useEffect(() => {
-    const processSharedFile = async (fileUrl) => {
-      if (!fileUrl) return;
-      
-      // Clear the global variable so we don't process it twice
-      window.pendingAndroidFileUrl = null;
-      
-      try {
-        setLoading(true);
-        console.log('App received URL from Native Android:', fileUrl);
-
-        // Read the file via Capacitor Filesystem
-        const result = await Filesystem.readFile({
-          path: fileUrl,
-        });
-
-        // Extract filename
-        let fileName = 'shared-file';
-        try {
-          const decodedUrl = decodeURIComponent(fileUrl);
-          const parts = decodedUrl.split('/');
-          const lastPart = parts[parts.length - 1];
-          if (lastPart && lastPart.includes('.')) {
-            fileName = lastPart;
-          }
-        } catch(err) { 
-          console.error("Filename extraction error", err); 
-        }
-
-        // Convert base64 native data to a Web File object
-        const blob = base64ToBlob(result.data);
-        const newFile = new File([blob], fileName);
-
-        // Trigger your existing upload logic
-        onDrop([newFile]);
-
-      } catch (error) {
-        setLoading(false);
-        console.error('Error reading shared file:', error);
-        alert('File Error: ' + error.message + '\n\nPath: ' + fileUrl);
-      }
-    };
-
-    // Actively poll for the native file URL
-    let attempts = 0;
-    const intervalId = setInterval(() => {
-      if (window.pendingAndroidFileUrl) {
-        // We found a file! Process it and stop polling.
-        processSharedFile(window.pendingAndroidFileUrl);
-        clearInterval(intervalId);
-      }
-      
-      attempts++;
-      // Stop checking after 10 attempts (5 seconds) to save battery
-      if (attempts >= 10) {
-        clearInterval(intervalId);
-      }
-    }, 500);
-
-    return () => {
-      clearInterval(intervalId);
-    };
-  }, [onDrop]);
   // --- 1. VIEWER SCREEN (File is Loaded) ---
   if (file) {
     return (
