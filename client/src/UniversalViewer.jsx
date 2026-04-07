@@ -7,16 +7,13 @@ import hljs from "highlight.js";
 import "highlight.js/styles/github.css"; 
 import { Loader2, Download, FileText, FolderOpen, ArrowLeft, FileQuestion, ChevronLeft, ChevronRight, FileCode, FileImage, Home } from "lucide-react";
 
-// Lazy Load Components
 const Editor = React.lazy(() => import("@monaco-editor/react"));
 const ModelViewer = React.lazy(() => import("./ModelViewer"));
 const PdfRenderer = React.lazy(() => import("./PdfRenderer"));
-
 const API_URL = "https://universal-file-opener.onrender.com";
 
-// --- HELPERS ---
 const LoadingSpinner = ({ text }) => (
-  <div className="flex flex-col items-center justify-center h-full text-blue-500 gap-3 p-6 text-center">
+  <div className="flex flex-col items-center justify-center h-full text-blue-500 gap-3 p-6 text-center print:hidden">
     <Loader2 className="w-10 h-10 animate-spin" />
     <span className="font-semibold text-lg">{text || "Processing..."}</span>
   </div>
@@ -44,10 +41,7 @@ const ZipNavigator = ({ zipContent, onFileClick }) => {
       }
     });
 
-    return {
-      folders: Array.from(folderSet).sort(),
-      files: fileList.sort((a, b) => a.name.localeCompare(b.name))
-    };
+    return { folders: Array.from(folderSet).sort(), files: fileList.sort((a, b) => a.name.localeCompare(b.name)) };
   }, [zipContent, currentPath]);
 
   const goUp = () => {
@@ -57,12 +51,10 @@ const ZipNavigator = ({ zipContent, onFileClick }) => {
   };
 
   return (
-    <div className="flex flex-col h-full bg-white">
+    <div className="flex flex-col h-full bg-white print:hidden">
       <div className="p-3 border-b bg-gray-50 flex items-center gap-2 shadow-sm shrink-0 overflow-x-auto whitespace-nowrap">
         {currentPath ? (
-          <button onClick={goUp} className="flex items-center gap-1 text-sm font-bold text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-full transition bg-white border border-blue-100">
-            <ArrowLeft size={16} /> Back
-          </button>
+          <button onClick={goUp} className="flex items-center gap-1 text-sm font-bold text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-full transition bg-white border border-blue-100"><ArrowLeft size={16} /> Back</button>
         ) : (
           <div className="flex items-center gap-1 text-sm font-bold text-gray-500 px-2"><Home size={16} /> Root</div>
         )}
@@ -115,7 +107,6 @@ const ZoomWrapper = ({ children, className = "" }) => {
         const oldScale = state.current.scale;
         const ratio = newScale / oldScale;
         const rect = container.getBoundingClientRect();
-
         const scrollLeft = container.scrollLeft;
         const scrollTop = container.scrollTop;
         const mouseX = centerX - rect.left;
@@ -131,32 +122,6 @@ const ZoomWrapper = ({ children, className = "" }) => {
         container.scrollTop = (scrollTop + mouseY) * ratio - mouseY;
     };
 
-    const handleTouchStart = (e) => {
-      if (e.touches.length === 2) {
-        const t1 = e.touches[0];
-        const t2 = e.touches[1];
-        state.current.startDist = Math.hypot(t1.pageX - t2.pageX, t1.pageY - t2.pageY);
-      }
-    };
-
-    const handleTouchMove = (e) => {
-      if (e.touches.length === 2) {
-        e.preventDefault();
-        const t1 = e.touches[0];
-        const t2 = e.touches[1];
-        const newDist = Math.hypot(t1.pageX - t2.pageX, t1.pageY - t2.pageY);
-        if (state.current.startDist > 0) {
-           const scaleChange = newDist / state.current.startDist;
-           let newScale = state.current.scale * scaleChange;
-           newScale = Math.max(1.0, Math.min(newScale, 5.0));
-           const centerX = (t1.clientX + t2.clientX) / 2;
-           const centerY = (t1.clientY + t2.clientY) / 2;
-           updateZoom(newScale, centerX, centerY);
-           state.current.startDist = newDist; 
-        }
-      }
-    };
-
     const handleWheel = (e) => {
       if (e.ctrlKey) {
         e.preventDefault();
@@ -167,20 +132,13 @@ const ZoomWrapper = ({ children, className = "" }) => {
       }
     };
 
-    container.addEventListener('touchstart', handleTouchStart, { passive: false });
-    container.addEventListener('touchmove', handleTouchMove, { passive: false });
     container.addEventListener('wheel', handleWheel, { passive: false });
-
-    return () => {
-      container.removeEventListener('touchstart', handleTouchStart);
-      container.removeEventListener('touchmove', handleTouchMove);
-      container.removeEventListener('wheel', handleWheel);
-    };
+    return () => container.removeEventListener('wheel', handleWheel);
   }, []);
 
   return (
-    <div ref={containerRef} className={`relative w-full h-full overflow-auto bg-gray-50 touch-pan-x touch-pan-y ${className}`}>
-      <div ref={contentRef} className="origin-top-left will-change-transform min-h-full" style={{ width: '100%', transition: 'transform 0.05s linear' }}>
+    <div ref={containerRef} className={`relative w-full h-full overflow-auto bg-gray-50 touch-pan-x touch-pan-y print:overflow-visible print:h-auto ${className}`}>
+      <div ref={contentRef} className="origin-top-left will-change-transform min-h-full print:h-auto" style={{ width: '100%', transition: 'transform 0.05s linear' }}>
         {children}
       </div>
     </div>
@@ -188,7 +146,7 @@ const ZoomWrapper = ({ children, className = "" }) => {
 };
 
 // --- 3. PAGINATED TABLE ---
-const PaginatedTable = ({ data, fileName }) => {
+const PaginatedTable = ({ data }) => {
   const [page, setPage] = useState(0);
   const rowsPerPage = 500;
   const totalPages = Math.ceil(data.length / rowsPerPage);
@@ -211,10 +169,10 @@ const PaginatedTable = ({ data, fileName }) => {
   `;
 
   return (
-    <div className="flex flex-col h-full w-full bg-white relative">
-      <div className="flex-1 w-full overflow-auto p-4" dangerouslySetInnerHTML={{ __html: html }} />
+    <div className="flex flex-col h-full w-full bg-white relative print:h-auto print:overflow-visible">
+      <div className="flex-1 w-full overflow-auto p-4 print:overflow-visible print:p-0" dangerouslySetInnerHTML={{ __html: html }} />
       {totalPages > 1 && (
-        <div className="flex items-center justify-between p-3 border-t bg-gray-50 shrink-0 sticky bottom-0 left-0 w-full z-10">
+        <div className="flex items-center justify-between p-3 border-t bg-gray-50 shrink-0 sticky bottom-0 left-0 w-full z-10 print:hidden">
           <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} className="px-3 py-1 bg-white border rounded shadow-sm disabled:opacity-50">Prev</button>
           <span className="text-sm text-gray-600">Page {page + 1} of {totalPages}</span>
           <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page === totalPages - 1} className="px-3 py-1 bg-white border rounded shadow-sm disabled:opacity-50">Next</button>
@@ -319,7 +277,6 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
   const [internalBackendData, setInternalBackendData] = useState(null);
   const [internalLoading, setInternalLoading] = useState(false);
 
-  // --- FIX: Detect Direct CSV/Excel Uploads and Parse Them ---
   useEffect(() => {
     if (file && !zipContent) {
       const ext = file.name.split('.').pop().toLowerCase();
@@ -346,7 +303,6 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     }
   }, [file, zipContent]);
 
-  // --- FIX: Detect Direct IPYNB Uploads ---
   useEffect(() => {
     if (file && !zipContent && file.name.toLowerCase().endsWith('.ipynb')) {
         setInternalLoading(true);
@@ -357,7 +313,6 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     }
   }, [file, zipContent]);
 
-  // --- FIX: Detect Direct DOCX Uploads (This was missing!) ---
   useEffect(() => {
     if (file && !zipContent && ['docx'].includes(fileType)) {
         setInternalLoading(true);
@@ -442,6 +397,19 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
     setInternalLoading(false);
   };
 
+  // Internal Download Button logic for ZIP files
+  const handleInternalDownload = () => {
+    const nativeDownloadTypes = ['pdf', 'png', 'jpg', 'jpeg', 'gif', 'mp4', 'mkv', 'mp3', 'wav', 'zip', 'jar', '7z'];
+    if (nativeDownloadTypes.includes(internalFileType)) {
+      const a = document.createElement('a');
+      a.href = internalFileUrl;
+      a.download = selectedZipFile.split('/').pop();
+      a.click();
+    } else {
+      window.print();
+    }
+  };
+
   const closeInternalFile = () => {
     setSelectedZipFile(null);
     setInternalFileUrl(null);
@@ -451,12 +419,9 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
   };
 
   const renderContent = (type, url, content, data, tableData, fileName) => {
-    
-    // A. TABLE DATA (FIX: Removed ZoomWrapper here)
     if (tableData) {
        return <PaginatedTable data={tableData} fileName={fileName} />;
     }
-    // B. HTML DOCUMENTS (Zoom Enabled)
     if (data?.type === 'html_table' || data?.type === 'html_doc') {
       return (
         <ZoomWrapper>
@@ -464,7 +429,6 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
         </ZoomWrapper>
       );
     }
-    // C. IMAGES (Zoom Enabled)
     if (EXT_MAP.image.includes(type) || data?.type === 'image_pass') {
       return (
         <ZoomWrapper>
@@ -472,8 +436,6 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
         </ZoomWrapper>
       );
     }
-
-    // D. PDF (Zoom Wrapper Enabled)
     if (type === 'pdf' || data?.type === 'pdf_pass') {
        return (
          <ZoomWrapper className="bg-white">
@@ -486,7 +448,6 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
        );
     }
 
-    // E. CODE (Native Zoom - No ZoomWrapper)
     if (content || data?.type === 'text_content') {
       const displayContent = data?.type === 'text_content' ? data.content : content;
       const getLanguage = (e) => ({ js:'javascript', py:'python', java:'java', html:'html', css:'css', json:'json', sql:'sql', md:'markdown' }[e] || "plaintext");
@@ -512,14 +473,12 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
       );
     }
     
-    // F. MODELS/MEDIA
     if (EXT_MAP.model.includes(type)) return <div className="h-[500px] w-full"><Suspense fallback={<LoadingSpinner />}><ModelViewer url={url} /></Suspense></div>;
     if (EXT_MAP.video.includes(type)) return <div className="flex items-center justify-center h-full bg-black"><video controls src={url} className="max-w-full max-h-full" /></div>;
     if (EXT_MAP.audio.includes(type)) return <div className="flex items-center justify-center h-60"><audio controls src={url} /></div>;
     
-    // G. Fallback
     return (
-      <div className="flex flex-col items-center justify-center h-full bg-gray-50 text-gray-600 p-6 text-center">
+      <div className="flex flex-col items-center justify-center h-full bg-gray-50 text-gray-600 p-6 text-center print:hidden">
         <FileQuestion className="w-12 h-12 text-gray-400 mb-4" />
         <h2 className="text-xl font-semibold mb-2">Preview Unavailable</h2>
         <a href={url} download={fileName} className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition"><Download className="w-5 h-5" /> Download File</a>
@@ -529,12 +488,22 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
 
   if (selectedZipFile) {
     return (
-      <div className="flex flex-col h-full bg-gray-100 relative">
-        <div className="bg-white p-3 border-b flex items-center gap-3 shadow-sm z-20 shrink-0">
-          <button onClick={closeInternalFile} className="flex items-center gap-1 text-sm font-semibold text-blue-600 hover:text-blue-800 transition"><ArrowLeft size={18} /> Back</button>
-          <span className="text-gray-700 text-sm font-medium truncate flex-1">/ {selectedZipFile}</span>
+      <div className="flex flex-col h-full bg-gray-100 relative print:h-auto print:overflow-visible">
+        {/* --- DOWNLOAD BUTTON FOR ZIP FILES --- */}
+        <div className="bg-white p-3 border-b flex items-center justify-between shadow-sm z-20 shrink-0 print:hidden">
+          <div className="flex items-center gap-3 overflow-hidden">
+            <button onClick={closeInternalFile} className="flex items-center gap-1 text-sm font-semibold text-blue-600 hover:text-blue-800 transition"><ArrowLeft size={18} /> Back</button>
+            <span className="text-gray-700 text-sm font-medium truncate">/ {selectedZipFile}</span>
+          </div>
+          <button 
+            onClick={handleInternalDownload} 
+            className="flex items-center gap-2 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition font-medium text-sm shrink-0"
+          >
+            <Download size={16} /> 
+            {['pdf', 'png', 'jpg', 'jpeg', 'mp4', 'mp3', 'zip'].includes(internalFileType) ? "Download" : "Save PDF"}
+          </button>
         </div>
-        <div className="flex-1 overflow-hidden relative w-full h-full">
+        <div className="flex-1 overflow-hidden relative w-full h-full print:overflow-visible print:h-auto">
           {internalLoading ? <LoadingSpinner text="Opening..." /> : renderContent(internalFileType, internalFileUrl, internalFileContent, internalBackendData, internalTableData, selectedZipFile)}
         </div>
       </div>
@@ -543,7 +512,6 @@ const UniversalViewer = ({ file, fileType, fileContent, backendData }) => {
 
   if ((fileType === 'zip' || fileType === 'jar') && zipContent) return <ZipNavigator zipContent={zipContent} onFileClick={handleZipFileClick} />;
   
-  // FIX: Include internalBackendData in renderContent for direct files (DOCX/IPYNB/CSV)
   return renderContent(
     fileType, 
     file ? URL.createObjectURL(file) : null, 
