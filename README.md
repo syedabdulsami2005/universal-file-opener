@@ -37,7 +37,6 @@ Fylix utilizes a hybrid approach to render almost any file you throw at it:
 ## 🛠️ Tech Stack
 
 * **Frontend:** React, Tailwind CSS, Lucide React (Icons), React Dropzone
-* **Mobile Wrapper:** Ionic Capacitor (`@capacitor/app`, `@capacitor/filesystem`)
 * **Backend API:** Custom rendering engine hosted on Render (`https://universal-file-opener.onrender.com`)
 * **Native OS:** Custom Java Bridge for Android `ACTION_VIEW` and `ACTION_SEND` intents.
 
